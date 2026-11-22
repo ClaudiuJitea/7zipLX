@@ -11,7 +11,7 @@
   </developer>
   <description>
     <p>7zipLX is a Linux desktop archive manager built with Qt 6. It reuses the portable 7-Zip engine for archive formats, compression, extraction, testing and hashing.</p>
-    <p>It provides a two-panel file manager, archive browsing, encrypted archives, multi-volume archives and a native Linux user interface.</p>
+    <p>It provides a two-panel file manager with drag and drop between local folders and archives, archive browsing, encrypted archives, multi-volume archives and a native Linux user interface.</p>
   </description>
   <launchable type="desktop-id">7ziplx.desktop</launchable>
   <provides>
@@ -23,6 +23,11 @@
   </categories>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.2.0" date="2026-11-22">
+      <description>
+        <p>Dual-pane drag and drop between local folders and archives, multi-selection drags, folder-row drop targets, archive-to-archive transfers, cross-pane clipboard operations, active-pane highlighting and Tab switching.</p>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-11-22"/>
   </releases>
 </component>

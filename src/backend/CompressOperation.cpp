@@ -309,6 +309,16 @@ OperationResult compressFiles(const QStringList &files,
   updateOptions.SetActionCommand_Add();
   updateOptions.PathMode = NWildcard::k_RelatPath;
   updateOptions.MethodMode.Type_Defined = false;
+  {
+    QString prefix = options.archiveSubdir;
+    prefix.replace(QLatin1Char('\\'), QLatin1Char('/'));
+    while (prefix.startsWith(QLatin1Char('/')))
+      prefix.remove(0, 1);
+    while (prefix.endsWith(QLatin1Char('/')))
+      prefix.chop(1);
+    if (!prefix.isEmpty())
+      updateOptions.AddPathPrefix = q2u(prefix + QLatin1Char('/'));
+  }
   if (options.formatIndex >= 0)
   {
     COpenType type;

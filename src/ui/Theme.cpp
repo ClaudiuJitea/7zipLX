@@ -140,6 +140,13 @@ QMainWindow, QDialog {
   border: 1px solid #2c2e34;
   border-radius: 8px;
 }
+#filePanel[active="true"] {
+  border: 1px solid #3d5a70;
+}
+#filePanel[dropActive="true"] {
+  border: 1px solid #4f8cff;
+  background: #202832;
+}
 #panelPathBar {
   background: #232428;
   border: 1px solid #35383f;
@@ -171,6 +178,10 @@ QLabel#panelStatus {
   border-top: 1px solid #2c2e34;
   color: #9aa0a8;
   padding: 5px 9px;
+}
+QLabel#panelStatus[active="true"] {
+  background: #1b232b;
+  color: #cfe0ee;
 }
 QMenuBar {
   background: #18191c;

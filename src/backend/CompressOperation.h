@@ -11,6 +11,7 @@ class PromptDispatcher;
 struct CompressOptions
 {
   QString archivePath;
+  QString archiveSubdir;         // folder inside the archive for new items
   int formatIndex = -1;          // -1: infer from archive extension
   int level = 5;
   int numThreads = -1;           // -1: automatic

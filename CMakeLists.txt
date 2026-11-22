@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(7zipLX VERSION 0.1.0 LANGUAGES C CXX)
+project(7zipLX VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -103,6 +103,7 @@ add_library(7ziplx_backend STATIC
   src/backend/SevenZipEngine.cpp
   src/backend/ArchiveSession.cpp
   src/backend/CompressOperation.cpp
+  src/backend/LocalFileOperation.cpp
   src/backend/HashOperation.cpp
   src/backend/BenchmarkOperation.cpp
 )
@@ -136,6 +137,8 @@ add_library(7ziplx_ui STATIC
   src/ui/dialogs/AboutDialog.cpp
   src/ui/dialogs/BenchmarkDialog.cpp
   src/ui/widgets/FilePanel.cpp
+  src/ui/widgets/FileView.cpp
+  src/ui/widgets/PanelTransfer.cpp
 )
 target_link_libraries(7ziplx_ui PUBLIC 7ziplx_backend Qt6::Widgets)
 

@@ -179,5 +179,5 @@ QVariant ArchiveFolderModel::headerData(int section, Qt::Orientation orientation
 Qt::ItemFlags ArchiveFolderModel::flags(const QModelIndex &index) const
 {
   if (!index.isValid()) return Qt::NoItemFlags;
-  return Qt::ItemIsEnabled | Qt::ItemIsSelectable;
+  return Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsDragEnabled;
 }

@@ -14,6 +14,7 @@
 #include "backend/ProgressState.h"
 #include "backend/PromptDispatcher.h"
 #include "backend/CompressOperation.h"
+#include "backend/LocalFileOperation.h"
 #include "backend/SevenZipEngine.h"
 
 #include <QAction>
@@ -43,15 +44,19 @@
 #include <QClipboard>
 #include <QMimeData>
 #include <QUrl>
+#include <QSet>
 #include <QSettings>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QStyle>
 #include <QTableView>
 #include <QThread>
+#include <QTimer>
 #include <QToolBar>
 #include <QUrl>
 #include <QVBoxLayout>
+
+static bool removeLocalPath(const QString &path);
 
 static bool isArchiveFile(const QString &path)
 {
@@ -101,6 +106,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
   m_splitter = new QSplitter(Qt::Horizontal, central);
   m_left = new FilePanel(m_splitter);
   m_right = new FilePanel(m_splitter);
+  m_left->setPanelId(0);
+  m_right->setPanelId(1);
   m_splitter->addWidget(m_left);
   m_splitter->addWidget(m_right);
   m_splitter->setStretchFactor(0, 1);
@@ -232,8 +239,12 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
   connect(m_right, &FilePanel::activeRequested, this, [this] { setActivePanel(m_right); });
   connect(m_left, &FilePanel::openArchiveRequested, this, &MainWindow::openArchiveRequested);
   connect(m_right, &FilePanel::openArchiveRequested, this, &MainWindow::openArchiveRequested);
-  connect(m_left, &FilePanel::filesDropped, this, &MainWindow::addDroppedFiles);
-  connect(m_right, &FilePanel::filesDropped, this, &MainWindow::addDroppedFiles);
+  connect(m_left, &FilePanel::transferRequested, this, &MainWindow::handleTransfer);
+  connect(m_right, &FilePanel::transferRequested, this, &MainWindow::handleTransfer);
+  connect(m_left, &FilePanel::focusOtherPanelRequested, this, &MainWindow::focusOtherPanel);
+  connect(m_right, &FilePanel::focusOtherPanelRequested, this, &MainWindow::focusOtherPanel);
+  connect(m_left, &FilePanel::filesMovedExternally, this, [this](const QStringList &) { m_left->refresh(); });
+  connect(m_right, &FilePanel::filesMovedExternally, this, [this](const QStringList &) { m_right->refresh(); });
   connect(m_left, &FilePanel::nestedArchiveRequested, this, &MainWindow::openNestedArchive);
   connect(m_right, &FilePanel::nestedArchiveRequested, this, &MainWindow::openNestedArchive);
   connect(m_left, &FilePanel::contextMenuRequested, this, &MainWindow::showPanelContextMenu);
@@ -297,8 +308,30 @@ void MainWindow::setActivePanel(FilePanel *panel)
 {
   if (!panel) return;
   m_active = panel;
+  if (m_left)
+    m_left->setActive(m_left == panel);
+  if (m_right)
+    m_right->setActive(m_right == panel);
   m_status->setText(panel->displayPath());
   updateActions();
+}
+
+FilePanel *MainWindow::panelById(int id) const
+{
+  if (m_left && m_left->panelId() == id)
+    return m_left;
+  if (m_right && m_right->panelId() == id)
+    return m_right;
+  return nullptr;
+}
+
+void MainWindow::focusOtherPanel()
+{
+  FilePanel *other = otherPanel();
+  if (!other)
+    return;
+  setActivePanel(other);
+  other->focusView();
 }
 
 void MainWindow::updateActions()
@@ -319,34 +352,382 @@ void MainWindow::openArchiveDialog()
     openPath(path);
 }
 
-void MainWindow::addDroppedFiles(const QStringList &paths, bool move)
+static bool openArchiveSource(const PanelTransfer &transfer, ArchiveSession &session,
+                              QVector<int> *rows, ProgressState *state,
+                              PromptDispatcher *prompts, QString *error)
 {
-  if (FilePanel *panel = qobject_cast<FilePanel *>(sender()))
+  if (!session.open(transfer.sourceRoot, QString(), state, prompts, error))
+    return false;
+  if (!transfer.archivePrefix.isEmpty() && !session.enterPath(transfer.archivePrefix))
   {
-    m_active = panel;
-    updateActions();
+    *error = QStringLiteral("Cannot open folder in source archive: %1").arg(transfer.archivePrefix);
+    return false;
   }
-  if (!m_active || !m_active->isArchive() || paths.isEmpty()) return;
-  const QString archivePath = m_active->archiveModel()->session()->archivePath();
-  const QString formatName = m_active->archiveModel()->session()->formatName();
-  CompressOptions options;
-  options.archivePath = archivePath;
-  options.formatIndex = SevenZipEngine::instance().formatIndex(formatName);
-  options.level = 5;
-  const auto result = runOperation(QStringLiteral("Adding files"),
-                                   [paths, options](ProgressState *state, PromptDispatcher *prompts) {
-                                     return compressFiles(paths, options, state, prompts);
-                                   });
-  if (!result.ok && !result.canceled)
-    m_prompts->showError(QStringLiteral("Add failed"), result.error);
-  else if (result.ok)
+  QSet<QString> wanted;
+  for (const QString &name : transfer.names)
   {
+    QString clean = name;
+    while (clean.endsWith(QLatin1Char('/')))
+      clean.chop(1);
+    if (!clean.isEmpty())
+      wanted.insert(clean);
+  }
+  rows->clear();
+  for (int row = 0; row < session.itemCount(); ++row)
+  {
+    QString name = session.item(row).name;
+    while (name.endsWith(QLatin1Char('/')))
+      name.chop(1);
+    if (wanted.contains(name))
+      rows->append(row);
+  }
+  if (rows->isEmpty())
+  {
+    *error = QStringLiteral("The selected items are no longer present in the source archive.");
+    return false;
+  }
+  return true;
+}
+
+void MainWindow::handleTransfer(const PanelTransfer &transfer, const PanelDropTarget &target,
+                                Qt::DropAction action)
+{
+  FilePanel *targetPanel = qobject_cast<FilePanel *>(sender());
+  if (!targetPanel)
+    targetPanel = m_active;
+  if (!targetPanel)
+    return;
+  setActivePanel(targetPanel);
+  performTransfer(transfer, targetPanel, target, action);
+}
+
+bool MainWindow::performTransfer(const PanelTransfer &transfer, FilePanel *target,
+                                 const PanelDropTarget &targetPath, Qt::DropAction action,
+                                 bool confirmMove)
+{
+  if (!target || !transfer.isValid() || !targetPath.isValid())
+    return false;
+
+  const bool move = action == Qt::MoveAction || transfer.cut;
+  FilePanel *source = panelById(transfer.sourcePanelId);
+  ArchiveSession *sourceSession = nullptr;
+  QVector<int> archiveRows = transfer.archiveRows;
+
+  if (transfer.kind == PanelTransfer::Archive)
+  {
+    if (source && (!source->isArchive() ||
+                   source->archiveModel()->session()->archivePath() != transfer.sourceRoot))
+      source = nullptr;
+    if (!source)
+    {
+      if (m_left && m_left->isArchive() &&
+          m_left->archiveModel()->session()->archivePath() == transfer.sourceRoot)
+        source = m_left;
+      else if (m_right && m_right->isArchive() &&
+               m_right->archiveModel()->session()->archivePath() == transfer.sourceRoot)
+        source = m_right;
+    }
+    if (source && source->isArchive() &&
+        source->archiveModel()->session()->archivePath() == transfer.sourceRoot &&
+        source->archiveRelativePath() == transfer.archivePrefix)
+    {
+      sourceSession = source->archiveModel()->session();
+      archiveRows.clear();
+      const int count = sourceSession->itemCount();
+      for (int row : transfer.archiveRows)
+      {
+        if (row >= 0 && row < count)
+          archiveRows.append(row);
+      }
+      if (archiveRows.isEmpty())
+      {
+        m_prompts->showError(QStringLiteral("Transfer"),
+                             QStringLiteral("No valid source items were selected."));
+        return false;
+      }
+    }
+    // Otherwise the source panel was closed or navigated away (typical for
+    // clipboard pastes).  The worker operation reopens the archive
+    // temporarily when sourceSession is null.
+  }
+  else
+  {
+    if (transfer.localPaths.isEmpty())
+      return false;
+    for (const QString &path : transfer.localPaths)
+    {
+      if (QFileInfo::exists(path) || QFileInfo(path).isSymLink())
+        continue;
+      m_prompts->showError(QStringLiteral("Transfer"),
+                           QStringLiteral("The source item no longer exists:\n%1").arg(path));
+      return false;
+    }
+  }
+
+  ArchiveSession *targetSession = target->isArchive() ? target->archiveModel()->session() : nullptr;
+  if (targetPath.archive)
+  {
+    if (!targetSession)
+    {
+      m_prompts->showError(QStringLiteral("Transfer"),
+                           QStringLiteral("No archive is open in the destination panel."));
+      return false;
+    }
+    if (transfer.kind == PanelTransfer::Archive &&
+        targetSession->archivePath() == transfer.sourceRoot)
+    {
+      m_prompts->showInfo(QStringLiteral("Transfer"),
+                          QStringLiteral("Source and destination are the same archive."));
+      return false;
+    }
+  }
+  else
+  {
+    if (!QFileInfo(targetPath.localDir).isDir())
+    {
+      m_prompts->showError(QStringLiteral("Transfer"),
+                           QStringLiteral("The destination folder does not exist:\n%1")
+                               .arg(targetPath.localDir));
+      return false;
+    }
+    const QString sourceDir = transfer.kind == PanelTransfer::Archive
+        ? QString() : QFileInfo(transfer.localPaths.first()).absolutePath();
+    if (!sourceDir.isEmpty() &&
+        QFileInfo(sourceDir).absoluteFilePath() == QFileInfo(targetPath.localDir).absoluteFilePath())
+    {
+      m_prompts->showInfo(QStringLiteral("Transfer"),
+                          QStringLiteral("Source and destination are the same folder."));
+      return false;
+    }
+  }
+
+  QString confirmation;
+  if (move)
+  {
+    if (transfer.kind == PanelTransfer::Archive)
+      confirmation = QStringLiteral("The selected archive items will be copied to the destination and then removed from the source archive. Continue?");
+    else if (targetPath.archive)
+      confirmation = QStringLiteral("The selected files will be added to the archive and then removed from the local filesystem. Continue?");
+    else if (confirmMove)
+      confirmation = QStringLiteral("Move the selected item(s)? The source is removed after a successful copy.");
+  }
+  if (!confirmation.isEmpty() &&
+      !m_prompts->confirm(QStringLiteral("Move"), confirmation, true))
+    return false;
+
+  OperationResult result;
+  if (!targetPath.archive && transfer.kind != PanelTransfer::Archive)
+  {
+    const QStringList paths = transfer.localPaths;
+    const QString targetDir = targetPath.localDir;
+    result = runOperation(move ? QStringLiteral("Moving") : QStringLiteral("Copying"),
+                          [paths, targetDir, move](ProgressState *state, PromptDispatcher *prompts) {
+                            return copyLocalItems(paths, targetDir, move, state, prompts);
+                          });
+    if (result.ok)
+    {
+      target->refresh();
+      selectTransferredItems(target, targetPath, transfer);
+    }
+  }
+  else if (!targetPath.archive && transfer.kind == PanelTransfer::Archive)
+  {
+    const QString targetDir = targetPath.localDir;
+    result = runOperation(move ? QStringLiteral("Moving from archive") : QStringLiteral("Extracting"),
+                          [transfer, sourceSession, archiveRows, targetDir, move](ProgressState *state, PromptDispatcher *prompts) {
+                            ArchiveSession temporary;
+                            ArchiveSession *session = sourceSession;
+                            QVector<int> rows = archiveRows;
+                            if (!session)
+                            {
+                              QString openError;
+                              if (!openArchiveSource(transfer, temporary, &rows, state, prompts, &openError))
+                              {
+                                OperationResult failed;
+                                failed.error = openError;
+                                return failed;
+                              }
+                              session = &temporary;
+                            }
+                            ExtractOptions options;
+                            options.outputDir = targetDir;
+                            options.pathMode = 1;
+                            options.overwriteMode = move ? 1 : 0;
+                            options.password = session->password();
+                            OperationResult extracted = session->extract(rows, options, state, prompts);
+                            if (!extracted.ok || !move)
+                              return extracted;
+                            OperationResult removed = session->deleteItems(rows, state, prompts);
+                            removed.files += extracted.files;
+                            removed.folders += extracted.folders;
+                            removed.unpackedSize += extracted.unpackedSize;
+                            removed.packedSize += extracted.packedSize;
+                            removed.messages = extracted.messages + removed.messages;
+                            return removed;
+                          });
+    if (result.ok)
+    {
+      target->refresh();
+      selectTransferredItems(target, targetPath, transfer);
+    }
+  }
+  else if (targetPath.archive && transfer.kind != PanelTransfer::Archive)
+  {
+    const QStringList paths = transfer.localPaths;
+    CompressOptions options;
+    options.archivePath = targetSession->archivePath();
+    options.archiveSubdir = targetPath.archivePrefix;
+    options.formatIndex = SevenZipEngine::instance().formatIndex(targetSession->formatName());
+    options.password = targetSession->password();
+    options.level = 5;
+    result = runOperation(move ? QStringLiteral("Moving to archive") : QStringLiteral("Adding to archive"),
+                          [paths, options](ProgressState *state, PromptDispatcher *prompts) {
+                            return compressFiles(paths, options, state, prompts);
+                          });
+    if (result.ok && move)
+    {
+      QStringList failed;
+      for (const QString &path : paths)
+      {
+        if (!removeLocalPath(path))
+          failed << path;
+      }
+      if (!failed.isEmpty())
+        m_prompts->showError(QStringLiteral("Remove source"),
+                             QStringLiteral("The items were added to the archive, but these sources could not be removed:\n%1")
+                                 .arg(failed.join(QLatin1Char('\n'))));
+      if (source)
+        source->refresh();
+    }
+  }
+  else if (targetPath.archive && transfer.kind == PanelTransfer::Archive)
+  {
+    const QString targetArchive = targetSession->archivePath();
+    const QString targetFormat = targetSession->formatName();
+    const QString targetPassword = targetSession->password();
+    const QString targetPrefix = targetPath.archivePrefix;
+    result = runOperation(move ? QStringLiteral("Moving archive entries")
+                               : QStringLiteral("Copying archive entries"),
+                          [transfer, sourceSession, archiveRows, targetArchive, targetFormat,
+                           targetPassword, targetPrefix, move]
+                          (ProgressState *state, PromptDispatcher *prompts) {
+                            ArchiveSession temporary;
+                            ArchiveSession *session = sourceSession;
+                            QVector<int> rows = archiveRows;
+                            if (!session)
+                            {
+                              QString openError;
+                              if (!openArchiveSource(transfer, temporary, &rows, state, prompts, &openError))
+                              {
+                                OperationResult failed;
+                                failed.error = openError;
+                                return failed;
+                              }
+                              session = &temporary;
+                            }
+                            QTemporaryDir temp;
+                            if (!temp.isValid())
+                            {
+                              OperationResult failed;
+                              failed.error = QStringLiteral("Cannot create a temporary directory");
+                              return failed;
+                            }
+                            ExtractOptions extractOptions;
+                            extractOptions.outputDir = temp.path();
+                            extractOptions.pathMode = 1;
+                            extractOptions.overwriteMode = 1;
+                            extractOptions.password = session->password();
+                            OperationResult extracted = session->extract(rows, extractOptions, state, prompts);
+                            if (!extracted.ok)
+                              return extracted;
+                            const QFileInfoList tops = QDir(temp.path()).entryInfoList(
+                                QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System);
+                            if (tops.isEmpty())
+                            {
+                              OperationResult failed;
+                              failed.error = QStringLiteral("No files were extracted from the source archive");
+                              return failed;
+                            }
+                            QStringList paths;
+                            for (const QFileInfo &info : tops)
+                              paths << info.absoluteFilePath();
+                            CompressOptions options;
+                            options.archivePath = targetArchive;
+                            options.archiveSubdir = targetPrefix;
+                            options.formatIndex = SevenZipEngine::instance().formatIndex(targetFormat);
+                            options.password = targetPassword;
+                            options.level = 5;
+                            OperationResult added = compressFiles(paths, options, state, prompts);
+                            added.messages = extracted.messages + added.messages;
+                            added.files += extracted.files;
+                            if (!added.ok || !move)
+                              return added;
+                            OperationResult removed = session->deleteItems(rows, state, prompts);
+                            removed.files += added.files;
+                            removed.messages = added.messages + removed.messages;
+                            return removed;
+                          });
+  }
+
+  if (!result.ok)
+  {
+    if (!result.canceled && !result.error.isEmpty())
+      m_prompts->showError(QStringLiteral("Transfer failed"), result.error);
+    return false;
+  }
+
+  if (targetPath.archive)
+  {
+    const QString archivePath = targetSession ? targetSession->archivePath() : QString();
+    const QString prefix = targetPath.archivePrefix;
     QString error;
-    m_active->openArchive(archivePath, nullptr, m_prompts, &error);
-    if (!error.isEmpty())
+    if (!target->openArchive(archivePath, nullptr, m_prompts, &error))
+    {
       m_prompts->showError(QStringLiteral("Reload archive"), error);
-    updateActions();
-    m_status->setText(QStringLiteral("Added %1 item(s)%2").arg(paths.size()).arg(move ? QStringLiteral(" (source kept)") : QString()));
+      return true;
+    }
+    if (!prefix.isEmpty())
+      target->enterArchivePath(prefix);
+    if (target->archiveRelativePath() == prefix)
+      selectTransferredItems(target, targetPath, transfer);
+  }
+  if (move && source)
+    source->refresh();
+  updateActions();
+  m_status->setText(QStringLiteral("%1 %2 item(s)")
+                        .arg(move ? QStringLiteral("Moved") : QStringLiteral("Copied"))
+                        .arg(result.files ? result.files : transfer.count()));
+  return true;
+}
+
+void MainWindow::selectTransferredItems(FilePanel *target, const PanelDropTarget &targetPath,
+                                        const PanelTransfer &transfer)
+{
+  if (!target)
+    return;
+  QStringList names;
+  for (const QString &name : transfer.names)
+  {
+    QString clean = name;
+    while (clean.endsWith(QLatin1Char('/')))
+      clean.chop(1);
+    if (!clean.isEmpty())
+      names << clean;
+  }
+  if (names.isEmpty())
+    return;
+  if (targetPath.archive)
+  {
+    if (target->archiveRelativePath() != targetPath.archivePrefix)
+      return;
+    QTimer::singleShot(0, target, [target, names] { target->selectArchiveEntries(names); });
+  }
+  else
+  {
+    QStringList paths;
+    for (const QString &name : names)
+      paths << targetPath.localDir + QLatin1Char('/') + name;
+    QTimer::singleShot(0, target, [target, paths] { target->selectLocalPaths(paths); });
   }
 }
 
@@ -547,12 +928,8 @@ void MainWindow::closeArchive()
 void MainWindow::selectAll()
 {
   if (!m_active) return;
-  QTableView *view = m_active->view();
-  if (view)
-  {
-    view->selectAll();
-    view->setFocus();
-  }
+  m_active->selectAllRows();
+  m_active->focusView();
 }
 
 void MainWindow::calculateHash()
@@ -645,232 +1022,115 @@ void MainWindow::moveToOtherPanel() { transferToOtherPanel(true); }
 
 void MainWindow::transferToOtherPanel(bool move)
 {
-  FilePanel *src = m_active;
-  FilePanel *dst = otherPanel();
-  if (!src || !dst) return;
-  if (move && !m_prompts->confirm(QStringLiteral("Move"),
-                                  QStringLiteral("Move the selected item(s) and remove them from the source?"), true))
+  FilePanel *source = m_active;
+  FilePanel *target = otherPanel();
+  if (!source || !target)
     return;
-  if (src->isArchive())
+  const PanelTransfer transfer = source->selectionTransfer();
+  if (!transfer.isValid())
   {
-    const QVector<int> rows = src->selectedArchiveRows();
-    if (rows.isEmpty()) return;
-    if (!dst->isArchive())
-    {
-      ExtractOptions eo;
-      eo.outputDir = dst->localPath();
-      if (move)
-      {
-        if (!m_prompts->confirm(QStringLiteral("Move from archive"),
-                                QStringLiteral("The selected items will be extracted to the other panel and then removed from the archive. Continue?"),
-                                true))
-          return;
-        eo.overwriteMode = 1; // overwrite; the operation is explicitly confirmed
-      }
-      ArchiveSession *session = src->archiveModel()->session();
-      const auto result = runOperation(move ? QStringLiteral("Moving from archive") : QStringLiteral("Extracting"),
-                                       [session, rows, eo](ProgressState *state, PromptDispatcher *prompts) {
-                                         return session->extract(rows, eo, state, prompts);
-                                       });
-      if (!result.ok && !result.canceled)
-        m_prompts->showError(QStringLiteral("Extraction failed"), result.error);
-      else if (result.ok && move)
-      {
-        const auto del = runOperation(QStringLiteral("Removing extracted items"),
-                                      [session, rows](ProgressState *state, PromptDispatcher *prompts) {
-                                        return session->deleteItems(rows, state, prompts);
-                                      });
-        if (!del.ok && !del.canceled) m_prompts->showError(QStringLiteral("Delete failed"), del.error);
-        src->archiveModel()->refresh();
-      }
-      dst->refresh();
-      return;
-    }
-    ArchiveSession *srcSession = src->archiveModel()->session();
-    ArchiveSession *dstSession = dst->archiveModel()->session();
-    if (!srcSession || !dstSession) return;
-    if (srcSession->archivePath() == dstSession->archivePath())
-    {
-      m_prompts->showInfo(QStringLiteral("Copy"), QStringLiteral("Source and destination are the same archive."));
-      return;
-    }
-    if (rows.isEmpty()) return;
-    const QString targetPath = dstSession->archivePath();
-    const QString targetFormat = dstSession->formatName();
-    const QString targetPassword = dstSession->password();
-    const QString sourcePassword = srcSession->password();
-    const auto result = runOperation(move ? QStringLiteral("Moving archive entries") : QStringLiteral("Copying archive entries"),
-                                     [srcSession, dstSession, rows, targetPath, targetFormat, targetPassword, sourcePassword, move](ProgressState *state, PromptDispatcher *prompts) {
-                                       QTemporaryDir temp;
-                                       if (!temp.isValid())
-                                       {
-                                         OperationResult r;
-                                         r.error = QStringLiteral("Cannot create a temporary directory");
-                                         return r;
-                                       }
-                                       ExtractOptions eo;
-                                       eo.outputDir = temp.path();
-                                       eo.pathMode = 1; // current folder paths, so top-level names are preserved
-                                       eo.overwriteMode = 1;
-                                       eo.password = sourcePassword;
-                                       auto ex = srcSession->extract(rows, eo, state, prompts);
-                                       if (!ex.ok) return ex;
-                                       QFileInfoList tops = QDir(temp.path()).entryInfoList(
-                                           QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System);
-                                       if (tops.isEmpty())
-                                       {
-                                         OperationResult r;
-                                         r.error = QStringLiteral("No files were extracted from the source archive");
-                                         return r;
-                                       }
-                                       QStringList paths;
-                                       for (const QFileInfo &fi : tops)
-                                         paths << fi.absoluteFilePath();
-                                       CompressOptions co;
-                                       co.archivePath = targetPath;
-                                       co.formatIndex = SevenZipEngine::instance().formatIndex(targetFormat);
-                                       co.password = targetPassword;
-                                       co.level = 5;
-                                       auto add = compressFiles(paths, co, state, prompts);
-                                       add.messages = ex.messages + add.messages;
-                                       if (!add.ok) return add;
-                                       if (move)
-                                       {
-                                         auto del = srcSession->deleteItems(rows, state, prompts);
-                                         if (!del.ok) return del;
-                                       }
-                                       return add;
-                                     });
-    if (!result.ok && !result.canceled)
-      m_prompts->showError(QStringLiteral("Archive copy failed"), result.error);
-    else if (result.ok)
-    {
-      QString error;
-      dst->openArchive(targetPath, nullptr, m_prompts, &error);
-      if (!error.isEmpty())
-        m_prompts->showError(QStringLiteral("Reload archive"), error);
-      if (move)
-        src->archiveModel()->refresh();
-      m_status->setText(QStringLiteral("Copied %1 item(s) between archives").arg(result.files ? result.files : rows.size()));
-    }
-    updateActions();
+    m_status->setText(QStringLiteral("Nothing selected"));
     return;
   }
-  const QStringList files = src->selectedLocalPaths();
-  if (files.isEmpty()) return;
-  if (dst->isArchive())
+  PanelDropTarget dropTarget;
+  if (target->isArchive())
   {
-    ArchiveSession *target = dst->archiveModel()->session();
-    CompressOptions co;
-    co.archivePath = target->archivePath();
-    co.formatIndex = SevenZipEngine::instance().formatIndex(target->formatName());
-    co.level = 5;
-    const auto result = runOperation(move ? QStringLiteral("Moving to archive") : QStringLiteral("Adding to archive"),
-                                     [files, co](ProgressState *state, PromptDispatcher *prompts) {
-                                       return compressFiles(files, co, state, prompts);
-                                     });
-    if (!result.ok && !result.canceled)
-      m_prompts->showError(QStringLiteral("Add failed"), result.error);
-    else if (result.ok)
-    {
-      const QString archivePath = co.archivePath;
-      QString error;
-      if (!dst->openArchive(archivePath, nullptr, m_prompts, &error))
-      {
-        m_prompts->showError(QStringLiteral("Reload archive"), error);
-        return;
-      }
-      if (move)
-      {
-        for (const QString &f : files)
-          removeLocalPath(f);
-        src->refresh();
-      }
-    }
+    dropTarget.archive = true;
+    dropTarget.archivePrefix = target->archiveRelativePath();
+  }
+  else
+  {
+    dropTarget.localDir = target->localPath();
+  }
+  performTransfer(transfer, target, dropTarget, move ? Qt::MoveAction : Qt::CopyAction, true);
+}
+
+void MainWindow::setClipboardFromSelection(bool cut)
+{
+  if (!m_active)
+    return;
+  PanelTransfer transfer = m_active->selectionTransfer();
+  if (!transfer.isValid())
+  {
+    m_status->setText(QStringLiteral("Nothing selected"));
     return;
   }
-  if (!dst->isArchive())
+  transfer.cut = cut;
+
+  auto *mime = new QMimeData;
+  mime->setData(QString::fromLatin1(kPanelTransferMime), transfer.encode());
+  mime->setData(QString::fromLatin1(kLegacyCutMime),
+                cut ? QByteArrayLiteral("1") : QByteArrayLiteral("0"));
+  mime->setText(transfer.names.join(QLatin1Char('\n')));
+  if (transfer.kind == PanelTransfer::Local)
   {
-    const QString targetDir = dst->localPath();
-    QStringList failed;
-    for (const QString &f : files)
-    {
-      const QString target = targetDir + QLatin1Char('/') + QFileInfo(f).fileName();
-      QString error;
-      bool ok = false;
-      if (QFileInfo::exists(target)) { failed << QStringLiteral("Destination already exists: %1").arg(target); continue; }
-      if (move)
-      {
-        ok = QFile::rename(f, target);
-        if (!ok)
-        {
-          ok = copyPathRecursive(f, target, &error);
-          if (ok)
-          {
-            ok = removeLocalPath(f);
-          }
-        }
-      }
-      else
-        ok = copyPathRecursive(f, target, &error);
-      if (!ok) failed << (error.isEmpty() ? f : error);
-    }
-    if (!failed.isEmpty()) m_prompts->showError(QStringLiteral("Copy failed"), failed.join(QLatin1Char('\n')));
-    src->refresh();
-    dst->refresh();
+    QList<QUrl> urls;
+    for (const QString &path : transfer.localPaths)
+      urls << QUrl::fromLocalFile(path);
+    mime->setUrls(urls);
+    QByteArray gnome = cut ? QByteArrayLiteral("cut\n") : QByteArrayLiteral("copy\n");
+    for (const QUrl &url : urls)
+      gnome += url.toEncoded() + '\n';
+    mime->setData(QStringLiteral("x-special/gnome-copied-files"), gnome);
+    mime->setData(QStringLiteral("application/x-kde-cutselection"),
+                  cut ? QByteArrayLiteral("1") : QByteArrayLiteral("0"));
   }
+  QApplication::clipboard()->setMimeData(mime);
+  m_status->setText(QStringLiteral("%1 %2 item(s)")
+                        .arg(cut ? QStringLiteral("Cut") : QStringLiteral("Copied"))
+                        .arg(transfer.count()));
 }
 
 void MainWindow::clipboardCopy()
 {
-  if (!m_active || m_active->isArchive()) return;
-  const QStringList files = m_active->selectedLocalPaths();
-  if (files.isEmpty()) return;
-  auto *mime = new QMimeData;
-  QList<QUrl> urls;
-  for (const QString &f : files) urls << QUrl::fromLocalFile(f);
-  mime->setUrls(urls);
-  mime->setData(QStringLiteral("application/x-7ziplx-cut"), QByteArrayLiteral("0"));
-  QApplication::clipboard()->setMimeData(mime);
-  m_status->setText(QStringLiteral("Copied %1 item(s)").arg(files.size()));
+  setClipboardFromSelection(false);
 }
 
 void MainWindow::clipboardCut()
 {
-  if (!m_active || m_active->isArchive()) return;
-  const QStringList files = m_active->selectedLocalPaths();
-  if (files.isEmpty()) return;
-  auto *mime = new QMimeData;
-  QList<QUrl> urls;
-  for (const QString &f : files) urls << QUrl::fromLocalFile(f);
-  mime->setUrls(urls);
-  mime->setData(QStringLiteral("application/x-7ziplx-cut"), QByteArrayLiteral("1"));
-  QApplication::clipboard()->setMimeData(mime);
-  m_status->setText(QStringLiteral("Cut %1 item(s)").arg(files.size()));
+  setClipboardFromSelection(true);
 }
 
 void MainWindow::clipboardPaste()
 {
-  if (!m_active || m_active->isArchive()) return;
+  if (!m_active)
+    return;
   const QMimeData *mime = QApplication::clipboard()->mimeData();
-  if (!mime || !mime->hasUrls()) return;
-  const bool cut = mime->data(QStringLiteral("application/x-7ziplx-cut")) == QByteArrayLiteral("1");
-  QStringList failed;
-  for (const QUrl &url : mime->urls())
+  if (!mime)
+    return;
+
+  PanelTransfer transfer;
+  if (mime->hasFormat(QString::fromLatin1(kPanelTransferMime)))
+    transfer = PanelTransfer::decode(mime->data(QString::fromLatin1(kPanelTransferMime)));
+  if (!transfer.isValid() && mime->hasUrls())
   {
-    if (!url.isLocalFile()) continue;
-    const QString src = url.toLocalFile();
-    const QString dst = m_active->localPath() + QLatin1Char('/') + QFileInfo(src).fileName();
-    QString error;
-    if (!copyPathRecursive(src, dst, &error))
-      failed << error;
-    else if (cut)
-    {
-      if (!removeLocalPath(src)) failed << QStringLiteral("Cannot remove source: %1").arg(src);
-    }
+    QStringList paths;
+    for (const QUrl &url : mime->urls())
+      if (url.isLocalFile())
+        paths << url.toLocalFile();
+    transfer = PanelTransfer::fromUrls(paths, panelTransferIsCut(mime));
   }
-  if (!failed.isEmpty()) m_prompts->showError(QStringLiteral("Paste failed"), failed.join(QLatin1Char('\n')));
-  m_active->refresh();
+  if (!transfer.isValid())
+    return;
+
+  PanelDropTarget target;
+  if (m_active->isArchive())
+  {
+    target.archive = true;
+    target.archivePrefix = m_active->archiveRelativePath();
+  }
+  else
+  {
+    target.localDir = m_active->localPath();
+  }
+
+  const bool cut = transfer.cut || panelTransferIsCut(mime);
+  if (performTransfer(transfer, m_active, target,
+                      cut ? Qt::MoveAction : Qt::CopyAction))
+  {
+    if (cut)
+      QApplication::clipboard()->clear();
+  }
 }
 
 void MainWindow::splitFile()
@@ -1915,8 +2175,10 @@ void MainWindow::showPanelContextMenu(const QPoint &globalPos)
     add(QStringLiteral("Edit"), [this] { openExternalEdit(); }, selectedCount == 1, QKeySequence(Qt::Key_F4));
     menu.addSeparator();
     add(QStringLiteral("Rename..."), [this] { renameSelected(); }, selectedCount == 1, QKeySequence(Qt::Key_F2));
-    add(QStringLiteral("Copy To..."), [this] { copySelected(); }, selectedCount >= 1, QKeySequence(Qt::Key_F5));
-    add(QStringLiteral("Move To..."), [this] { moveSelected(); }, selectedCount >= 1, QKeySequence(Qt::Key_F6));
+    add(QStringLiteral("Copy to Other Panel"), [this] { copyToOtherPanel(); }, selectedCount >= 1, QKeySequence(Qt::Key_F5));
+    add(QStringLiteral("Move to Other Panel"), [this] { moveToOtherPanel(); }, selectedCount >= 1, QKeySequence(Qt::Key_F6));
+    add(QStringLiteral("Copy To..."), [this] { copySelected(); }, selectedCount >= 1, QKeySequence(QStringLiteral("Ctrl+F5")));
+    add(QStringLiteral("Move To..."), [this] { moveSelected(); }, selectedCount >= 1, QKeySequence(QStringLiteral("Ctrl+F6")));
     add(QStringLiteral("Delete"), [this] { deleteSelected(); }, selectedCount >= 1, QKeySequence(Qt::Key_Delete));
     menu.addSeparator();
     add(QStringLiteral("Split file..."), [this] { splitFile(); }, selectedCount == 1);
@@ -1934,6 +2196,10 @@ void MainWindow::showPanelContextMenu(const QPoint &globalPos)
     menu.addSeparator();
     add(QStringLiteral("Link..."), [this] { createLink(); }, selectedCount == 1);
     add(QStringLiteral("Alternate streams"), [] {}, false);
+    menu.addSeparator();
+    add(QStringLiteral("Select All"), [panel] { panel->selectAllRows(); }, true, QKeySequence(QKeySequence::SelectAll));
+    add(QStringLiteral("Invert Selection"), [panel] { panel->invertSelection(); });
+    add(QStringLiteral("Refresh"), [panel] { panel->refresh(); }, true, QKeySequence(QKeySequence::Refresh));
   }
   else
   {
@@ -1950,6 +2216,8 @@ void MainWindow::showPanelContextMenu(const QPoint &globalPos)
     add(QStringLiteral("Test archive"), [this] { testArchive(); }, true, QKeySequence(QStringLiteral("Ctrl+T")));
     menu.addSeparator();
     add(QStringLiteral("Rename..."), [this] { renameSelected(); }, selectedCount == 1, QKeySequence(Qt::Key_F2));
+    add(QStringLiteral("Copy to Other Panel"), [this] { copyToOtherPanel(); }, selectedCount >= 1, QKeySequence(Qt::Key_F5));
+    add(QStringLiteral("Move to Other Panel"), [this] { moveToOtherPanel(); }, selectedCount >= 1, QKeySequence(Qt::Key_F6));
     add(QStringLiteral("Delete"), [this] { deleteSelected(); }, selectedCount >= 1, QKeySequence(Qt::Key_Delete));
     add(QStringLiteral("Comment..."), [this] { editComment(); }, selectedCount == 1, QKeySequence(QStringLiteral("Ctrl+Z")));
     add(QStringLiteral("Properties"), [this] { showProperties(); }, selectedCount == 1, QKeySequence(QStringLiteral("Alt+Return")));
@@ -1960,7 +2228,7 @@ void MainWindow::showPanelContextMenu(const QPoint &globalPos)
       crc->addAction(method, this, [this, method] { hashSelection(method); });
     menu.addSeparator();
     add(QStringLiteral("Create Folder..."), [this] { createFolder(); }, true, QKeySequence(Qt::Key_F7));
-    add(QStringLiteral("Select All"), [panel] { panel->view()->selectAll(); }, true, QKeySequence(QKeySequence::SelectAll));
+    add(QStringLiteral("Select All"), [panel] { panel->selectAllRows(); }, true, QKeySequence(QKeySequence::SelectAll));
     add(QStringLiteral("Invert Selection"), [panel] { panel->invertSelection(); });
     add(QStringLiteral("Refresh"), [panel] { panel->refresh(); }, true, QKeySequence(QKeySequence::Refresh));
   }

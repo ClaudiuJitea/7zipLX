@@ -32,7 +32,11 @@ Screenshots: [`context-menu-local.png`](screenshots/context-menu-local.png) and 
 - **Add to Archive** (`Alt+A`) creates an archive from selected local files/folders.
 - Drag local files onto an archive panel to add them.
 - Drag files out of an archive panel to the local panel to extract them.
-- `F5` / `F6` copy or move between the two panels.
+- Drop onto a folder row to copy into that folder. In an archive, dropping onto
+  a folder row adds the items inside that archive folder.
+- Plain drag or `Ctrl` copies; `Shift` moves.
+- `F5` / `F6` copy or move between the two panels. `Tab` / `Shift+Tab` switch the
+  active panel.
 - `F2` renames; `Del` deletes; `F7` creates a folder; `Ctrl+N` creates a file.
 - `Alt+Enter` shows basic properties.
 - `File > Create Link...` creates a symbolic or hard link for a selected local file.
@@ -49,9 +53,28 @@ When creating an archive, enter a password in the Compress dialog. For 7z, enabl
 
 Double-click an archive file inside an archive panel to browse it as a nested archive. `Backspace` at the nested root returns to the parent archive. `View > Flat View` shows nested local or archive items in one flat list.
 
+## Dual-pane transfers and clipboard
+
+Select any number of items with `Ctrl`/`Shift`-click or `Ctrl+A`. Starting a
+drag keeps the whole selection, including rows that were not under the mouse.
+`Ctrl+I` inverts the selection. The status line shows the selected item count
+and size.
+
+- Drag between local folders, from local to archive, from archive to local, or
+  between two archives.
+- Drop onto a folder row to choose the destination. Archive folder rows use
+  that folder inside the target archive.
+- `Shift`-drag moves; plain or `Ctrl`-drag copies. Moves from archives are
+  confirmed before the source entries are deleted.
+- `Ctrl+C` / `Ctrl+X` / `Ctrl+V` use the same transfer engine. If the source
+  archive panel has been closed or navigated away, paste reopens the archive
+  in the background.
+- `Tab` / `Shift+Tab` switch the active panel; the active panel is highlighted.
+  `Ctrl+L` focuses the path bar.
+
 ## Archive-to-archive copy/move
 
-With two archive panels open, `F5`/`F6` copy or move selected items between them through a temporary extraction. The target archive is refreshed after the operation.
+With two archive panels open, `F5`/`F6` or drag and drop copy or move selected items between them through a temporary extraction. The target archive is refreshed after the operation.
 
 ## Comments, diff, viewer and editor
 
@@ -107,6 +130,9 @@ The application uses a dark desktop theme with rounded panels, menus and dialogs
 | Create folder | `F7` |
 | Create file | `Ctrl+N` |
 | Up one level | `Backspace` |
+| Switch active panel | `Tab` / `Shift+Tab` |
+| Focus path bar | `Ctrl+L` |
+| Invert selection | `Ctrl+I` |
 | Refresh | `Ctrl+R` |
 | Select all | `Ctrl+A` |
 | Cut/copy/paste | `Ctrl+X` / `Ctrl+C` / `Ctrl+V` |

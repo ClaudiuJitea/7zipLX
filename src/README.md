@@ -5,6 +5,9 @@
   headers; implementation details stay behind pimpl.
 - `models/` — `LocalFsModel`, `RootModel`, archive-folder model.
 - `ui/` — panels, dialogs, widgets, menus and toolbar resources.
+  `ui/widgets/FileView.*` implements selection-preserving drag and drop;
+  `ui/widgets/PanelTransfer.*` carries local/archive selections through drags,
+  drops and the clipboard.
 
 Rules:
 

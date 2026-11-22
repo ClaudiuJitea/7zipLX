@@ -3,9 +3,11 @@
 #include <QWidget>
 #include <QVector>
 #include <QStringList>
+#include <QSet>
 #include <memory>
 
 #include "backend/ArchiveSession.h"
+#include "PanelTransfer.h"
 
 class LocalFsModel;
 class ArchiveFolderModel;
@@ -17,6 +19,7 @@ class QTableView;
 class QLabel;
 class QToolButton;
 class QTemporaryDir;
+class FileView;
 
 class FilePanel : public QWidget
 {
@@ -40,6 +43,21 @@ public:
   void refresh();
   bool goUp();
   void focusView();
+  void focusPathBar();
+  bool enterArchivePath(const QString &relativePath);
+
+  void setPanelId(int id);
+  int panelId() const { return m_panelId; }
+  void setActive(bool active);
+  bool isActive() const { return m_active; }
+  void setDropHighlight(bool active);
+
+  void selectAllRows();
+  void selectLocalPaths(const QStringList &paths);
+  void selectArchiveEntries(const QStringList &names);
+  PanelTransfer selectionTransfer() const;
+  PanelDropTarget dropTargetForPosition(const QPoint &viewportPos) const;
+  QString archiveRelativePath() const;
 
   Mode mode() const { return m_mode; }
   bool isArchive() const;
@@ -60,9 +78,11 @@ signals:
   void activeRequested();
   void openArchiveRequested(const QString &path);
   void statusMessage(const QString &message);
-  void filesDropped(const QStringList &paths, bool move);
+  void filesMovedExternally(const QStringList &paths);
   void nestedArchiveRequested(int row);
   void contextMenuRequested(const QPoint &globalPos);
+  void transferRequested(const PanelTransfer &transfer, const PanelDropTarget &target, Qt::DropAction action);
+  void focusOtherPanelRequested();
 
 protected:
   bool eventFilter(QObject *watched, QEvent *event) override;
@@ -78,8 +98,20 @@ private:
   void clearNestedArchives();
   void updateStatus();
   void updatePathBar();
+  void connectSelectionModel();
+  void connectModelSignals();
+  QString localKeyForRow(int row) const;
+  QString archiveKeyForRow(int row) const;
+  void saveLocalSelection();
+  void saveArchiveSelection();
+  void scheduleLocalSelectionRestore();
+  void scheduleArchiveSelectionRestore();
+  void restoreLocalSelection();
+  void restoreArchiveSelection();
 
   Mode m_mode = LocalMode;
+  int m_panelId = -1;
+  bool m_active = false;
   bool m_flatMode = false;
   QString m_lastLocalPath;
   LocalFsModel *m_localModel = nullptr;
@@ -94,4 +126,13 @@ private:
   QToolButton *m_refreshButton = nullptr;
   QTableView *m_view = nullptr;
   QLabel *m_status = nullptr;
+
+  QSet<QString> m_savedLocalSelection;
+  QString m_savedLocalCurrent;
+  QString m_savedLocalRoot;
+  QSet<QString> m_savedArchiveSelection;
+  QString m_savedArchiveCurrent;
+  QString m_savedArchivePrefix;
+  QString m_savedArchiveRoot;
+  bool m_restoringSelection = false;
 };

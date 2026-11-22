@@ -80,6 +80,7 @@ public:
   ArchiveEntryInfo item(int index) const;
 
   bool enter(int index);
+  bool enterPath(const QString &relativePath);
   bool up();
   bool root();
   bool setFlatMode(bool flat);

@@ -1,0 +1,29 @@
+Add an archive path prefix for update operations.
+
+The 7-Zip 26.06 update API already passes an "AddPathPrefix" argument to
+EnumerateItems() but hardcodes it to an empty string.  Expose it through
+CUpdateOptions so the GUI can drop files into a subfolder of an existing
+archive instead of always adding them at the archive root.
+
+--- a/CPP/7zip/UI/Common/Update.h
++++ b/CPP/7zip/UI/Common/Update.h
+@@ -116,7 +116,7 @@
+   UString StdInFileName;
+   UString EMailAddress;
+   FString WorkingDir;
+-  // UString AddPathPrefix;
++  UString AddPathPrefix;
+ 
+   CObjectVector<CRenamePair> RenamePairs;
+   CRecordVector<UInt64> VolumesSizes;
+--- a/CPP/7zip/UI/Common/Update.cpp
++++ b/CPP/7zip/UI/Common/Update.cpp
+@@ -1396,7 +1396,7 @@
+ 
+       const HRESULT res = EnumerateItems(censor,
+           options.PathMode,
+-          UString(), // options.AddPathPrefix,
++          options.AddPathPrefix,
+           dirItems);
+ 
+       if (res != S_OK)

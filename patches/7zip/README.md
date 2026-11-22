@@ -10,8 +10,11 @@ Rules:
 - Prefer a compatibility header for trivial definitions; patch only where behavior differs.
 - Every patch must be covered by a successful build of the application.
 
-Current patch:
+Current patches:
 
 - `0001-agent-posix.patch` — `INVALID_FILE_ATTRIBUTES`, `HMODULE`, alt-stream helper,
   `CFileInfo` fields, icon/resource loading, `AgentOut.cpp` / `ArchiveFolderOut.cpp`
   POSIX conversions, and `UINT64`/`UInt64` fixes.
+- `0002-update-path-prefix.patch` — exposes the existing `EnumerateItems()`
+  path prefix through `CUpdateOptions::AddPathPrefix`, so files dropped onto an
+  archive folder row are added inside that folder.

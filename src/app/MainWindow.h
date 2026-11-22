@@ -6,6 +6,7 @@
 #include <memory>
 
 #include "backend/ArchiveSession.h"
+#include "ui/widgets/PanelTransfer.h"
 
 class FilePanel;
 class PromptDispatcher;
@@ -64,9 +65,11 @@ private slots:
   void combineFiles();
   void showAbout();
   void openArchiveRequested(const QString &path);
-  void addDroppedFiles(const QStringList &paths, bool move);
   void openNestedArchive(int row);
   void showPanelContextMenu(const QPoint &globalPos);
+  void handleTransfer(const PanelTransfer &transfer, const PanelDropTarget &target,
+                      Qt::DropAction action);
+  void focusOtherPanel();
 
 private:
   using OperationFn = std::function<OperationResult(ProgressState *, PromptDispatcher *)>;
@@ -74,6 +77,13 @@ private:
   FilePanel *activePanel() const { return m_active; }
   FilePanel *otherPanel() const { return m_active == m_left ? m_right : m_left; }
   void transferToOtherPanel(bool move);
+  bool performTransfer(const PanelTransfer &transfer, FilePanel *target,
+                       const PanelDropTarget &targetPath, Qt::DropAction action,
+                       bool confirmMove = false);
+  FilePanel *panelById(int id) const;
+  void setClipboardFromSelection(bool cut);
+  void selectTransferredItems(FilePanel *target, const PanelDropTarget &targetPath,
+                              const PanelTransfer &transfer);
   void setActivePanel(FilePanel *panel);
   void updateActions();
   bool materializeItem(QString *path, QString *error);

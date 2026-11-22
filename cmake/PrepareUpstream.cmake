@@ -18,6 +18,8 @@ set(_patched_files
   CPP/7zip/UI/Agent/ArchiveFolderOpen.cpp
   CPP/7zip/UI/Agent/ArchiveFolderOut.cpp
   CPP/7zip/UI/Agent/UpdateCallbackAgent.cpp
+  CPP/7zip/UI/Common/Update.cpp
+  CPP/7zip/UI/Common/Update.h
 )
 foreach(_file IN LISTS _patched_files)
   set(_path "${UPSTREAM_DIR}/${_file}")
@@ -32,13 +34,18 @@ foreach(_file IN LISTS _patched_files)
   endif()
 endforeach()
 
-set(_patch "${CMAKE_CURRENT_LIST_DIR}/../patches/7zip/0001-agent-posix.patch")
-execute_process(
-  COMMAND patch -p1 -d "${UPSTREAM_DIR}" -i "${_patch}"
-  RESULT_VARIABLE _patch_result
-  OUTPUT_VARIABLE _patch_output
-  ERROR_VARIABLE _patch_error
+foreach(_patch_file
+  0001-agent-posix.patch
+  0002-update-path-prefix.patch
 )
-if(NOT _patch_result EQUAL 0)
-  message(FATAL_ERROR "Failed to apply ${_patch}:\n${_patch_output}\n${_patch_error}")
-endif()
+  set(_patch "${CMAKE_CURRENT_LIST_DIR}/../patches/7zip/${_patch_file}")
+  execute_process(
+    COMMAND patch -p1 -d "${UPSTREAM_DIR}" -i "${_patch}"
+    RESULT_VARIABLE _patch_result
+    OUTPUT_VARIABLE _patch_output
+    ERROR_VARIABLE _patch_error
+  )
+  if(NOT _patch_result EQUAL 0)
+    message(FATAL_ERROR "Failed to apply ${_patch}:\n${_patch_output}\n${_patch_error}")
+  endif()
+endforeach()

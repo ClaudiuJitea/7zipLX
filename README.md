@@ -33,8 +33,8 @@ Project repository: [github.com/ClaudiuJitea/7zipLX](https://github.com/ClaudiuJ
 - **Native Linux UI** — Qt 6 Widgets with a polished dark theme.
 - **Real 7-Zip engine** — archive formats, codecs, crypto and editing come from
   7-Zip 26.06, not an external CLI process.
-- **Two-panel workflow** — copy and move between local folders or archives with
-  `F5` / `F6`.
+- **Two-panel workflow** — drag and drop or use `F5` / `F6` to copy and move
+  between local folders and archives, with multi-selection preserved.
 - **Full archive operations** — open, browse, extract, test, create, update,
   rename, delete and hash archive items.
 - **Encryption support** — password-protected archives and encrypted 7z headers.
@@ -51,6 +51,19 @@ The left panel can show an archive while the right panel browses the local
 filesystem. Drag and drop, copy/move and archive editing work across both panels.
 
 ![Main window showing an archive and local folder](docs/screenshots/main-window.png)
+
+### Dual-pane drag and drop
+
+- Drag a complete multi-selection (`Ctrl+A`, `Ctrl`/`Shift`-click) without losing
+  the rows you started the drag from.
+- Drop on a folder row to use that folder as the destination; archive folder
+  rows add items inside that archive folder.
+- Plain drag or `Ctrl` copies; `Shift` moves. Local, archive and mixed
+  local/archive transfers are supported in both directions.
+- `Tab` / `Shift+Tab` switch the active panel. The active panel has a distinct
+  border and status bar.
+- `Ctrl+X` / `Ctrl+C` / `Ctrl+V` work across panels and archives, including a
+  clipboard taken from an archive panel that has since been closed.
 
 ### Right-click menus
 
@@ -121,8 +134,10 @@ MIME associations and language selection.
 - Two-panel local filesystem browsing.
 - Mount view for quickly reaching filesystems and the home folder.
 - Create, rename, copy, move, delete and link files/folders.
-- Clipboard cut/copy/paste.
-- Drag and drop from the app or from desktop file managers.
+- Clipboard cut/copy/paste across local folders and archives.
+- Drag and drop between both panels and from desktop file managers.
+- Drop-on-folder targets, archive-to-archive transfers and selection-preserving
+  multi-item drags.
 - Favorites and persisted window/panel settings.
 - External viewer, editor and diff commands.
 - ZIP item comments.
@@ -152,7 +167,7 @@ Building packages locally writes the same artifacts to `dist/`.
 ### Debian / Ubuntu
 
 ```bash
-sudo apt install ./dist/7ziplx_0.1.0-1_amd64.deb
+sudo apt install ./dist/7ziplx_0.2.0-1_amd64.deb
 ```
 
 The package installs the application, shared engine, desktop entry, icons, man
@@ -162,8 +177,8 @@ distribution; the current artifact was built on Ubuntu 26.04 amd64.
 ### AppImage
 
 ```bash
-chmod +x dist/7zipLX-0.1.0-x86_64.AppImage
-./dist/7zipLX-0.1.0-x86_64.AppImage
+chmod +x dist/7zipLX-0.2.0-x86_64.AppImage
+./dist/7zipLX-0.2.0-x86_64.AppImage
 ```
 
 The AppImage bundles Qt 6, `lib7zcore.so`, `7z.so`, the platform plugins and the
@@ -259,6 +274,9 @@ marshalled back to the GUI thread. The UI never calls 7-Zip directly.
 | Delete | `Del` |
 | Create folder / file | `F7` / `Ctrl+N` |
 | Up one level | `Backspace` |
+| Switch active panel | `Tab` / `Shift+Tab` |
+| Edit path bar | `Ctrl+L` |
+| Invert selection | `Ctrl+I` |
 | Refresh | `Ctrl+R` |
 | Select all | `Ctrl+A` |
 | Cut / copy / paste | `Ctrl+X` / `Ctrl+C` / `Ctrl+V` |

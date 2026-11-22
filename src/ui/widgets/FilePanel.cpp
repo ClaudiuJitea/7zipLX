@@ -1,4 +1,6 @@
 #include "FilePanel.h"
+#include "FileView.h"
+#include "PanelTransfer.h"
 #include "models/LocalFsModel.h"
 #include "models/ArchiveFolderModel.h"
 #include "models/RootModel.h"
@@ -22,12 +24,8 @@
 #include <QHBoxLayout>
 #include <QEvent>
 #include <QContextMenuEvent>
-#include <QDragEnterEvent>
-#include <QDragMoveEvent>
-#include <QDropEvent>
-#include <QMimeData>
-#include <QUrl>
-#include <QMessageBox>
+#include <QLocale>
+#include <QTimer>
 #include <QDirIterator>
 #include <QTemporaryDir>
 #include <algorithm>
@@ -64,10 +62,8 @@ FilePanel::FilePanel(QWidget *parent) : QWidget(parent)
   top->addWidget(m_refreshButton);
   layout->addLayout(top);
 
-  m_view = new QTableView(this);
+  m_view = new FileView(this, this);
   m_view->setObjectName(QStringLiteral("fileView"));
-  m_view->setSelectionBehavior(QAbstractItemView::SelectRows);
-  m_view->setSelectionMode(QAbstractItemView::ExtendedSelection);
   m_view->setAlternatingRowColors(true);
   m_view->setSortingEnabled(true);
   m_view->setShowGrid(false);
@@ -83,11 +79,10 @@ FilePanel::FilePanel(QWidget *parent) : QWidget(parent)
   m_view->verticalHeader()->setVisible(false);
   m_view->verticalHeader()->setDefaultSectionSize(29);
   m_view->viewport()->setContextMenuPolicy(Qt::CustomContextMenu);
-  m_view->setDragEnabled(true);
-  m_view->setAcceptDrops(true);
-  m_view->viewport()->setAcceptDrops(true);
   m_view->installEventFilter(this);
   m_view->viewport()->installEventFilter(this);
+  m_pathBar->installEventFilter(this);
+  m_pathBar->lineEdit()->installEventFilter(this);
   layout->addWidget(m_view, 1);
 
   m_status = new QLabel(this);
@@ -103,9 +98,8 @@ FilePanel::FilePanel(QWidget *parent) : QWidget(parent)
   connect(m_pathBar->lineEdit(), &QLineEdit::returnPressed, this, &FilePanel::onPathEntered);
   connect(m_upButton, &QToolButton::clicked, this, [this] { goUp(); });
   connect(m_refreshButton, &QToolButton::clicked, this, &FilePanel::refresh);
-  connect(m_view, &QTableView::doubleClicked, this, &FilePanel::onActivated);
+  connect(m_view, &QTableView::activated, this, &FilePanel::onActivated);
   connect(m_view, &QTableView::clicked, this, &FilePanel::activeRequested);
-  connect(m_view->selectionModel(), &QItemSelectionModel::selectionChanged, this, &FilePanel::onSelectionChanged);
   connect(m_localModel, &LocalFsModel::pathChanged, this, [this](const QString &p) {
     m_lastLocalPath = p;
     if (m_mode == LocalMode)
@@ -122,6 +116,7 @@ FilePanel::FilePanel(QWidget *parent) : QWidget(parent)
       updateStatus();
     }
   });
+  connectModelSignals();
 
   setLocalPath(QDir::homePath());
 }
@@ -159,6 +154,7 @@ void FilePanel::setMode(Mode mode)
     for (int i = 4; i < m_view->model()->columnCount(); ++i)
       m_view->setColumnHidden(i, true);
   }
+  connectSelectionModel();
   m_view->sortByColumn(0, Qt::AscendingOrder);
   updatePathBar();
   updateStatus();
@@ -224,6 +220,9 @@ bool FilePanel::openArchive(const QString &path, ProgressState *progress, Prompt
 {
   clearNestedArchives();
   m_archiveRootDisplay.clear();
+  m_savedArchiveSelection.clear();
+  m_savedArchivePrefix.clear();
+  m_savedArchiveRoot.clear();
   QString err;
   if (!m_archiveModel->open(path, formatHint, progress, prompts, &err, password))
   {
@@ -401,6 +400,240 @@ void FilePanel::focusView()
   m_view->setFocus();
 }
 
+void FilePanel::focusPathBar()
+{
+  m_pathBar->setFocus();
+  m_pathBar->lineEdit()->selectAll();
+}
+
+void FilePanel::setPanelId(int id)
+{
+  m_panelId = id;
+}
+
+void FilePanel::setActive(bool active)
+{
+  if (m_active == active)
+    return;
+  m_active = active;
+  setProperty("active", active);
+  if (m_status)
+  {
+    m_status->setProperty("active", active);
+    m_status->style()->unpolish(m_status);
+    m_status->style()->polish(m_status);
+  }
+  style()->unpolish(this);
+  style()->polish(this);
+}
+
+void FilePanel::setDropHighlight(bool active)
+{
+  if (property("dropActive").toBool() == active)
+    return;
+  setProperty("dropActive", active);
+  style()->unpolish(this);
+  style()->polish(this);
+}
+
+void FilePanel::selectAllRows()
+{
+  QItemSelectionModel *selection = m_view->selectionModel();
+  if (!selection || !m_view->model())
+    return;
+  const int rows = m_view->model()->rowCount();
+  QItemSelection all;
+  int first = -1;
+  for (int row = 0; row < rows; ++row)
+  {
+    if (m_mode == LocalMode && m_localModel->isParentRow(row))
+      continue;
+    const QModelIndex left = m_view->model()->index(row, 0);
+    const QModelIndex right = m_view->model()->index(row, m_view->model()->columnCount() - 1);
+    if (!left.isValid())
+      continue;
+    all.select(left, right);
+    if (first < 0)
+      first = row;
+  }
+  selection->clearSelection();
+  if (!all.isEmpty())
+    selection->select(all, QItemSelectionModel::Select | QItemSelectionModel::Rows);
+  if (first >= 0)
+  {
+    const QModelIndex index = m_view->model()->index(first, 0);
+    selection->setCurrentIndex(index, QItemSelectionModel::NoUpdate);
+    m_view->scrollTo(index);
+  }
+  updateStatus();
+}
+
+void FilePanel::selectLocalPaths(const QStringList &paths)
+{
+  if (m_mode != LocalMode || paths.isEmpty())
+    return;
+  QSet<QString> wanted;
+  for (const QString &path : paths)
+    wanted.insert(QFileInfo(path).absoluteFilePath());
+  QItemSelectionModel *selection = m_view->selectionModel();
+  if (!selection)
+    return;
+  QItemSelection selected;
+  QModelIndex current;
+  for (int row = 0; row < m_localModel->rowCount(); ++row)
+  {
+    const QString key = localKeyForRow(row);
+    if (!wanted.contains(key))
+      continue;
+    const QModelIndex left = m_localModel->index(row, 0);
+    const QModelIndex right = m_localModel->index(row, m_localModel->columnCount() - 1);
+    selected.select(left, right);
+    if (!current.isValid())
+      current = left;
+  }
+  selection->clearSelection();
+  if (!selected.isEmpty())
+    selection->select(selected, QItemSelectionModel::Select | QItemSelectionModel::Rows);
+  if (current.isValid())
+  {
+    selection->setCurrentIndex(current, QItemSelectionModel::NoUpdate);
+    m_view->scrollTo(current);
+  }
+  updateStatus();
+}
+
+void FilePanel::selectArchiveEntries(const QStringList &names)
+{
+  if (m_mode != ArchiveMode || names.isEmpty() || !m_archiveModel)
+    return;
+  QSet<QString> wanted;
+  for (const QString &name : names)
+  {
+    QString clean = name;
+    while (clean.endsWith(QLatin1Char('/')))
+      clean.chop(1);
+    wanted.insert(clean);
+  }
+  QItemSelectionModel *selection = m_view->selectionModel();
+  if (!selection)
+    return;
+  QItemSelection selected;
+  QModelIndex current;
+  for (int row = 0; row < m_archiveModel->rowCount(); ++row)
+  {
+    const ArchiveEntryInfo &entry = m_archiveModel->entry(row);
+    QString entryName = entry.name;
+    while (entryName.endsWith(QLatin1Char('/')))
+      entryName.chop(1);
+    if (!wanted.contains(entryName))
+      continue;
+    const QModelIndex left = m_archiveModel->index(row, 0);
+    const QModelIndex right = m_archiveModel->index(row, m_archiveModel->columnCount() - 1);
+    selected.select(left, right);
+    if (!current.isValid())
+      current = left;
+  }
+  selection->clearSelection();
+  if (!selected.isEmpty())
+    selection->select(selected, QItemSelectionModel::Select | QItemSelectionModel::Rows);
+  if (current.isValid())
+  {
+    selection->setCurrentIndex(current, QItemSelectionModel::NoUpdate);
+    m_view->scrollTo(current);
+  }
+  updateStatus();
+}
+
+PanelTransfer FilePanel::selectionTransfer() const
+{
+  PanelTransfer transfer;
+  transfer.sourcePanelId = m_panelId;
+  if (m_mode == LocalMode)
+  {
+    transfer.kind = PanelTransfer::Local;
+    transfer.sourceRoot = m_localModel->path();
+    transfer.localPaths = selectedLocalPaths();
+    for (const QString &path : transfer.localPaths)
+      transfer.names << QFileInfo(path).fileName();
+  }
+  else if (m_mode == ArchiveMode && m_archiveModel && m_archiveModel->session())
+  {
+    ArchiveSession *session = m_archiveModel->session();
+    transfer.kind = PanelTransfer::Archive;
+    transfer.sourceRoot = session->archivePath();
+    transfer.archivePrefix = session->relativePath();
+    transfer.archiveRows = selectedArchiveRows();
+    for (int row : transfer.archiveRows)
+    {
+      const ArchiveEntryInfo &entry = m_archiveModel->entry(row);
+      QString name = entry.name;
+      while (name.endsWith(QLatin1Char('/')))
+        name.chop(1);
+      transfer.names << name;
+      transfer.archivePaths << (entry.path.isEmpty() ? name : entry.path);
+    }
+  }
+  return transfer;
+}
+
+PanelDropTarget FilePanel::dropTargetForPosition(const QPoint &viewportPos) const
+{
+  PanelDropTarget target;
+  const QModelIndex index = m_view->indexAt(viewportPos);
+  if (m_mode == LocalMode)
+  {
+    target.localDir = m_localModel->path();
+    if (index.isValid())
+    {
+      const QFileInfo info = m_localModel->fileInfo(index.row());
+      if (info.isDir())
+        target.localDir = info.absoluteFilePath();
+    }
+  }
+  else if (m_mode == ArchiveMode && m_archiveModel && m_archiveModel->isOpen())
+  {
+    target.archive = true;
+    target.archivePrefix = archiveRelativePath();
+    if (index.isValid())
+    {
+      const ArchiveEntryInfo &entry = m_archiveModel->entry(index.row());
+      if (entry.isDir)
+      {
+        QString name = entry.name;
+        while (name.endsWith(QLatin1Char('/')))
+          name.chop(1);
+        if (!name.isEmpty() && name != QLatin1String(".") && name != QLatin1String(".."))
+        {
+          QString prefix = target.archivePrefix;
+          while (prefix.endsWith(QLatin1Char('/')))
+            prefix.chop(1);
+          target.archivePrefix = prefix.isEmpty() ? name : prefix + QLatin1Char('/') + name;
+        }
+      }
+    }
+  }
+  return target;
+}
+
+QString FilePanel::archiveRelativePath() const
+{
+  return (m_archiveModel && m_archiveModel->session())
+      ? m_archiveModel->session()->relativePath() : QString();
+}
+
+bool FilePanel::enterArchivePath(const QString &relativePath)
+{
+  if (m_mode != ArchiveMode || !m_archiveModel || !m_archiveModel->session())
+    return false;
+  if (!m_archiveModel->session()->enterPath(relativePath))
+    return false;
+  m_archiveModel->refresh();
+  updatePathBar();
+  emit pathChanged(displayPath());
+  updateStatus();
+  return true;
+}
+
 bool FilePanel::isArchive() const
 {
   return m_mode == ArchiveMode && m_archiveModel && m_archiveModel->isOpen();
@@ -465,16 +698,32 @@ void FilePanel::invertSelection()
   if (!selection || !m_view->model())
     return;
   const int rows = m_view->model()->rowCount();
+  const int columns = m_view->model()->columnCount();
   QItemSelection inverted;
+  QModelIndex current;
   for (int row = 0; row < rows; ++row)
   {
-    const QModelIndex index = m_view->model()->index(row, 0);
-    if (!selection->isRowSelected(row, QModelIndex()))
-      inverted.select(index, index);
+    if (m_mode == LocalMode && m_localModel->isParentRow(row))
+      continue;
+    if (selection->isRowSelected(row, QModelIndex()))
+      continue;
+    const QModelIndex left = m_view->model()->index(row, 0);
+    const QModelIndex right = m_view->model()->index(row, columns - 1);
+    if (!left.isValid())
+      continue;
+    inverted.select(left, right);
+    if (!current.isValid())
+      current = left;
   }
   selection->clearSelection();
   if (!inverted.isEmpty())
     selection->select(inverted, QItemSelectionModel::Select | QItemSelectionModel::Rows);
+  if (current.isValid())
+  {
+    selection->setCurrentIndex(current, QItemSelectionModel::NoUpdate);
+    m_view->scrollTo(current);
+  }
+  updateStatus();
 }
 
 void FilePanel::onCustomContextMenu(const QPoint &pos)
@@ -516,8 +765,12 @@ void FilePanel::onActivated(const QModelIndex &index)
     const ArchiveEntryInfo &e = m_archiveModel->entry(index.row());
     if (e.isDir)
     {
-      m_archiveModel->enter(index.row());
-      emit pathChanged(displayPath());
+      if (m_archiveModel->enter(index.row()))
+      {
+        updatePathBar();
+        emit pathChanged(displayPath());
+        updateStatus();
+      }
     }
     else
     {
@@ -545,7 +798,13 @@ void FilePanel::onActivated(const QModelIndex &index)
 void FilePanel::onSelectionChanged()
 {
   updateStatus();
-  emit activeRequested();
+  if (!m_restoringSelection)
+    emit activeRequested();
+}
+
+static QString panelSizeText(quint64 bytes)
+{
+  return QLocale().formattedDataSize(qint64(bytes), 1, QLocale::DataSizeTraditionalFormat);
 }
 
 void FilePanel::updateStatus()
@@ -553,15 +812,38 @@ void FilePanel::updateStatus()
   if (m_mode == LocalMode)
   {
     const int total = m_localModel->rowCount();
-    const int selected = m_view->selectionModel()->selectedRows(0).size();
-    m_status->setText(QStringLiteral("%1 item(s)   %2 selected").arg(total).arg(selected));
+    const int selected = selectedLocalPaths().size();
+    quint64 selectedBytes = 0;
+    if (selected > 0)
+    {
+      const auto rows = m_view->selectionModel()->selectedRows(0);
+      for (const QModelIndex &idx : rows)
+      {
+        if (m_localModel->isParentRow(idx.row()))
+          continue;
+        const QFileInfo info = m_localModel->fileInfo(idx.row());
+        if (info.isFile() && !info.isSymLink())
+          selectedBytes += quint64(info.size());
+      }
+    }
+    QString text = QStringLiteral("%1 item(s)   %2 selected").arg(total).arg(selected);
+    if (selectedBytes > 0)
+      text += QStringLiteral("   %1").arg(panelSizeText(selectedBytes));
+    m_status->setText(text);
   }
   else if (m_mode == ArchiveMode)
   {
     const int total = m_archiveModel->rowCount();
-    const int selected = m_view->selectionModel()->selectedRows(0).size();
-    m_status->setText(QStringLiteral("%1 item(s)   %2 selected   %3")
-                          .arg(total).arg(selected).arg(displayPath()));
+    const QVector<int> rows = selectedArchiveRows();
+    const int selected = rows.size();
+    quint64 selectedBytes = 0;
+    for (int row : rows)
+      selectedBytes += m_archiveModel->entry(row).size;
+    QString text = QStringLiteral("%1 item(s)   %2 selected").arg(total).arg(selected);
+    if (selectedBytes > 0)
+      text += QStringLiteral("   %1").arg(panelSizeText(selectedBytes));
+    text += QStringLiteral("   %1").arg(displayPath());
+    m_status->setText(text);
   }
   else
   {
@@ -584,30 +866,199 @@ void FilePanel::updatePathBar()
   m_pathBar->setToolTip(path);
 }
 
-static bool copyDropPath(const QString &src, const QString &dst, QString *error)
+void FilePanel::connectSelectionModel()
 {
-  const QFileInfo fi(src);
-  if (fi.isSymLink())
+  if (QItemSelectionModel *selection = m_view->selectionModel())
   {
-    if (QFile::exists(dst)) { if (error) *error = QStringLiteral("Destination already exists: %1").arg(dst); return false; }
-    if (!QFile::link(fi.symLinkTarget(), dst)) { if (error) *error = QStringLiteral("Cannot create link: %1").arg(src); return false; }
-    return true;
+    disconnect(selection, nullptr, this, nullptr);
+    connect(selection, &QItemSelectionModel::selectionChanged, this,
+            &FilePanel::onSelectionChanged);
+    connect(selection, &QItemSelectionModel::currentChanged, this,
+            [this](const QModelIndex &, const QModelIndex &) { updateStatus(); });
   }
-  if (fi.isDir())
+}
+
+void FilePanel::connectModelSignals()
+{
+  connect(m_localModel, &QAbstractItemModel::modelAboutToBeReset, this, [this] {
+    if (m_mode == LocalMode)
+      saveLocalSelection();
+  });
+  connect(m_localModel, &QAbstractItemModel::modelReset, this, [this] {
+    if (m_mode == LocalMode)
+      scheduleLocalSelectionRestore();
+  });
+  connect(m_archiveModel, &QAbstractItemModel::modelAboutToBeReset, this, [this] {
+    if (m_mode == ArchiveMode)
+      saveArchiveSelection();
+  });
+  connect(m_archiveModel, &QAbstractItemModel::modelReset, this, [this] {
+    if (m_mode == ArchiveMode)
+      scheduleArchiveSelectionRestore();
+  });
+}
+
+QString FilePanel::localKeyForRow(int row) const
+{
+  return m_localModel->fileInfo(row).absoluteFilePath();
+}
+
+QString FilePanel::archiveKeyForRow(int row) const
+{
+  const ArchiveEntryInfo &entry = m_archiveModel->entry(row);
+  if (!entry.path.isEmpty())
+    return entry.path;
+  QString name = entry.name;
+  while (name.endsWith(QLatin1Char('/')))
+    name.chop(1);
+  const QString prefix = archiveRelativePath();
+  return prefix.isEmpty() ? name : prefix + QLatin1Char('/') + name;
+}
+
+void FilePanel::saveLocalSelection()
+{
+  m_savedLocalRoot = m_localModel->path();
+  m_savedLocalSelection.clear();
+  m_savedLocalCurrent.clear();
+  QItemSelectionModel *selection = m_view->selectionModel();
+  if (!selection || m_mode != LocalMode)
+    return;
+  const auto rows = selection->selectedRows(0);
+  for (const QModelIndex &index : rows)
   {
-    if (!QDir().mkpath(dst)) { if (error) *error = dst; return false; }
-    QDirIterator it(src, QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System);
-    while (it.hasNext())
+    if (m_localModel->isParentRow(index.row()))
+      continue;
+    const QString key = localKeyForRow(index.row());
+    if (!key.isEmpty())
+      m_savedLocalSelection.insert(key);
+  }
+  const QModelIndex current = m_view->currentIndex();
+  if (current.isValid() && !m_localModel->isParentRow(current.row()))
+    m_savedLocalCurrent = localKeyForRow(current.row());
+}
+
+void FilePanel::saveArchiveSelection()
+{
+  if (!m_archiveModel || !m_archiveModel->session())
+  {
+    m_savedArchiveSelection.clear();
+    m_savedArchivePrefix.clear();
+    m_savedArchiveRoot.clear();
+    m_savedArchiveCurrent.clear();
+    return;
+  }
+  m_savedArchiveRoot = m_archiveModel->session()->archivePath();
+  m_savedArchivePrefix = archiveRelativePath();
+  m_savedArchiveSelection.clear();
+  m_savedArchiveCurrent.clear();
+  QItemSelectionModel *selection = m_view->selectionModel();
+  if (!selection || m_mode != ArchiveMode)
+    return;
+  const auto rows = selection->selectedRows(0);
+  for (const QModelIndex &index : rows)
+  {
+    const QString key = archiveKeyForRow(index.row());
+    if (!key.isEmpty())
+      m_savedArchiveSelection.insert(key);
+  }
+  const QModelIndex current = m_view->currentIndex();
+  if (current.isValid())
+    m_savedArchiveCurrent = archiveKeyForRow(current.row());
+}
+
+void FilePanel::scheduleLocalSelectionRestore()
+{
+  QTimer::singleShot(0, this, &FilePanel::restoreLocalSelection);
+}
+
+void FilePanel::scheduleArchiveSelectionRestore()
+{
+  QTimer::singleShot(0, this, &FilePanel::restoreArchiveSelection);
+}
+
+void FilePanel::restoreLocalSelection()
+{
+  if (m_mode != LocalMode || m_restoringSelection)
+    return;
+  if (m_savedLocalRoot != m_localModel->path())
+    return;
+  QItemSelectionModel *selection = m_view->selectionModel();
+  if (!selection)
+    return;
+
+  m_restoringSelection = true;
+  QItemSelection selected;
+  QModelIndex current;
+  for (int row = 0; row < m_localModel->rowCount(); ++row)
+  {
+    const QString key = localKeyForRow(row);
+    if (m_savedLocalSelection.contains(key))
     {
-      const QString child = it.next();
-      if (!copyDropPath(child, dst + QLatin1Char('/') + QFileInfo(child).fileName(), error))
-        return false;
+      const QModelIndex left = m_localModel->index(row, 0);
+      const QModelIndex right = m_localModel->index(row, m_localModel->columnCount() - 1);
+      selected.select(left, right);
     }
-    return true;
+    if (!m_savedLocalCurrent.isEmpty() && key == m_savedLocalCurrent)
+      current = m_localModel->index(row, 0);
   }
-  if (QFile::exists(dst)) { if (error) *error = QStringLiteral("Destination already exists: %1").arg(dst); return false; }
-  if (!QFile::copy(src, dst)) { if (error) *error = src; return false; }
-  return true;
+  selection->clearSelection();
+  if (!selected.isEmpty())
+    selection->select(selected, QItemSelectionModel::Select | QItemSelectionModel::Rows);
+  if (current.isValid())
+  {
+    selection->setCurrentIndex(current, QItemSelectionModel::NoUpdate);
+    m_view->scrollTo(current);
+  }
+  m_savedLocalSelection.clear();
+  m_savedLocalCurrent.clear();
+  m_savedLocalRoot.clear();
+  m_restoringSelection = false;
+  updateStatus();
+}
+
+void FilePanel::restoreArchiveSelection()
+{
+  if (m_mode != ArchiveMode || m_restoringSelection)
+    return;
+  if (!m_archiveModel || !m_archiveModel->session())
+    return;
+  if (m_savedArchiveRoot != m_archiveModel->session()->archivePath())
+    return;
+  if (m_savedArchivePrefix != archiveRelativePath())
+    return;
+  QItemSelectionModel *selection = m_view->selectionModel();
+  if (!selection)
+    return;
+
+  m_restoringSelection = true;
+  QItemSelection selected;
+  QModelIndex current;
+  for (int row = 0; row < m_archiveModel->rowCount(); ++row)
+  {
+    const QString key = archiveKeyForRow(row);
+    if (m_savedArchiveSelection.contains(key))
+    {
+      const QModelIndex left = m_archiveModel->index(row, 0);
+      const QModelIndex right = m_archiveModel->index(row, m_archiveModel->columnCount() - 1);
+      selected.select(left, right);
+    }
+    if (!m_savedArchiveCurrent.isEmpty() && key == m_savedArchiveCurrent)
+      current = m_archiveModel->index(row, 0);
+  }
+  selection->clearSelection();
+  if (!selected.isEmpty())
+    selection->select(selected, QItemSelectionModel::Select | QItemSelectionModel::Rows);
+  if (current.isValid())
+  {
+    selection->setCurrentIndex(current, QItemSelectionModel::NoUpdate);
+    m_view->scrollTo(current);
+  }
+  m_savedArchiveSelection.clear();
+  m_savedArchiveCurrent.clear();
+  m_savedArchiveRoot.clear();
+  m_savedArchivePrefix.clear();
+  m_restoringSelection = false;
+  updateStatus();
 }
 
 bool FilePanel::eventFilter(QObject *watched, QEvent *event)
@@ -622,66 +1073,18 @@ bool FilePanel::eventFilter(QObject *watched, QEvent *event)
     return true;
   }
 
-  if (watched == m_view && event->type() == QEvent::FocusIn)
+  if (event->type() == QEvent::FocusIn &&
+      (watched == m_view || watched == m_view->viewport() ||
+       watched == m_pathBar || watched == m_pathBar->lineEdit()))
+  {
     emit activeRequested();
+  }
 
-  if ((watched == m_view || watched == m_view->viewport()) && event->type() == QEvent::DragEnter)
+  if (event->type() == QEvent::MouseButtonPress &&
+      (watched == m_view || watched == m_view->viewport()))
   {
-    auto *de = static_cast<QDragEnterEvent *>(event);
-    if (de->mimeData()->hasUrls())
-    {
-      de->acceptProposedAction();
-      return true;
-    }
+    emit activeRequested();
   }
-  if ((watched == m_view || watched == m_view->viewport()) && event->type() == QEvent::DragMove)
-  {
-    auto *de = static_cast<QDragMoveEvent *>(event);
-    if (de->mimeData()->hasUrls())
-    {
-      de->acceptProposedAction();
-      return true;
-    }
-  }
-  if (watched == m_view->viewport() && event->type() == QEvent::Drop)
-  {
-    auto *de = static_cast<QDropEvent *>(event);
-    QStringList files;
-    for (const QUrl &url : de->mimeData()->urls())
-      if (url.isLocalFile()) files << url.toLocalFile();
-    if (files.isEmpty()) return false;
-    const bool move = de->proposedAction() == Qt::MoveAction;
-    if (m_mode == ArchiveMode)
-    {
-      emit filesDropped(files, move);
-      de->acceptProposedAction();
-      return true;
-    }
-    if (m_mode == LocalMode)
-    {
-      for (const QString &src : files)
-      {
-        const QString dst = m_localModel->path() + QLatin1Char('/') + QFileInfo(src).fileName();
-        QString error;
-        if (!copyDropPath(src, dst, &error))
-        {
-          QMessageBox box(QMessageBox::NoIcon, QStringLiteral("Drop"),
-                          QStringLiteral("Cannot copy: %1").arg(error), QMessageBox::Ok, this);
-          box.exec();
-        }
-        else if (move)
-        {
-          const QFileInfo fi(src);
-          if (fi.isSymLink() || !fi.isDir())
-            QFile::remove(src);
-          else
-            QDir(src).removeRecursively();
-        }
-      }
-      m_localModel->refresh();
-      de->acceptProposedAction();
-      return true;
-    }
-  }
+
   return QWidget::eventFilter(watched, event);
 }

@@ -666,6 +666,35 @@ bool ArchiveSession::enter(int index)
   return true;
 }
 
+bool ArchiveSession::enterPath(const QString &relativePath)
+{
+  if (!d->open || !d->current)
+    return false;
+  while (!d->stack.isEmpty())
+  {
+    if (!up())
+      return false;
+  }
+  const QStringList parts = relativePath.split(QLatin1Char('/'), Qt::SkipEmptyParts);
+  for (const QString &part : parts)
+  {
+    int found = -1;
+    const int count = itemCount();
+    for (int i = 0; i < count; ++i)
+    {
+      const ArchiveEntryInfo entry = item(i);
+      if (entry.isDir && entry.name == part)
+      {
+        found = i;
+        break;
+      }
+    }
+    if (found < 0 || !enter(found))
+      return false;
+  }
+  return true;
+}
+
 bool ArchiveSession::up()
 {
   if (!d->open || d->stack.isEmpty())
