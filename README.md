@@ -167,7 +167,7 @@ Building packages locally writes the same artifacts to `dist/`.
 ### Debian / Ubuntu
 
 ```bash
-sudo apt install ./dist/7ziplx_0.2.0-1_amd64.deb
+sudo apt install ./dist/7ziplx_0.3.0-1_amd64.deb
 ```
 
 The package installs the application, shared engine, desktop entry, icons, man
@@ -177,8 +177,8 @@ distribution; the current artifact was built on Ubuntu 26.04 amd64.
 ### AppImage
 
 ```bash
-chmod +x dist/7zipLX-0.2.0-x86_64.AppImage
-./dist/7zipLX-0.2.0-x86_64.AppImage
+chmod +x dist/7zipLX-0.3.0-x86_64.AppImage
+./dist/7zipLX-0.3.0-x86_64.AppImage
 ```
 
 The AppImage bundles Qt 6, `lib7zcore.so`, `7z.so`, the platform plugins and the
@@ -291,6 +291,9 @@ marshalled back to the GUI thread. The UI never calls 7-Zip directly.
   `IFolderOperations::SetProperty` (currently ZIP items).
 - Nested archive browsing and archive-to-archive transfers use temporary
   extraction, so very large entries require temporary disk space.
+- Nested archives are read-only for editing: changes to the temporary inner
+  copy cannot be written back to the outer archive automatically. Extract the
+  inner archive first, then open it from disk to edit it.
 - External editors open a temporary copy of archive items; edits are not written
   back automatically.
 - Third-party `7z.so` plugins must match the 7-Zip 26.06 ABI.

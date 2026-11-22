@@ -61,6 +61,8 @@ public:
 
   Mode mode() const { return m_mode; }
   bool isArchive() const;
+  bool isNestedArchive() const { return !m_archiveParents.isEmpty(); }
+  bool reloadArchive(ProgressState *progress, PromptDispatcher *prompts, QString *error);
   QString localPath() const;
   QString displayPath() const;
 

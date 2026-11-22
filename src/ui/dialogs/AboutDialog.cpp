@@ -2,6 +2,7 @@
 
 #include <QApplication>
 #include <QDialogButtonBox>
+#include <QIcon>
 #include <QLabel>
 #include <QVBoxLayout>
 
@@ -11,8 +12,8 @@ AboutDialog::AboutDialog(QWidget *parent) : QDialog(parent)
   setWindowIcon(QIcon());
   setMinimumWidth(520);
   auto *layout = new QVBoxLayout(this);
-  layout->setContentsMargins(22, 20, 22, 18);
-  layout->setSpacing(10);
+  layout->setContentsMargins(26, 22, 26, 20);
+  layout->setSpacing(12);
 
   auto *title = new QLabel(QStringLiteral("7zipLX"), this);
   title->setObjectName(QStringLiteral("dialogHeading"));
@@ -22,7 +23,7 @@ AboutDialog::AboutDialog(QWidget *parent) : QDialog(parent)
   sub->setWordWrap(true);
   layout->addWidget(sub);
 
-  auto *version = new QLabel(QStringLiteral("Version 0.2.0 · Qt %1 · 7-Zip 26.06").arg(QString::fromLatin1(qVersion())), this);
+  auto *version = new QLabel(QStringLiteral("Version 0.3.0 · Qt %1 · 7-Zip 26.06").arg(QString::fromLatin1(qVersion())), this);
   version->setObjectName(QStringLiteral("dialogSubheading"));
   layout->addWidget(version);
 

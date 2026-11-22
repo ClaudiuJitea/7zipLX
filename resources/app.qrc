@@ -9,6 +9,7 @@
     <file alias="7ziplx-256.png">icons/7ziplx-256.png</file>
     <file alias="check.svg">icons/check.svg</file>
     <file alias="chevron-down.svg">icons/chevron-down.svg</file>
+    <file alias="chevron-up.svg">icons/chevron-up.svg</file>
     <file alias="toolbar/open.svg">icons/toolbar/open.svg</file>
     <file alias="toolbar/add.svg">icons/toolbar/add.svg</file>
     <file alias="toolbar/extract.svg">icons/toolbar/extract.svg</file>

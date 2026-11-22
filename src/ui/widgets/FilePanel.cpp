@@ -639,6 +639,35 @@ bool FilePanel::isArchive() const
   return m_mode == ArchiveMode && m_archiveModel && m_archiveModel->isOpen();
 }
 
+bool FilePanel::reloadArchive(ProgressState *progress, PromptDispatcher *prompts, QString *error)
+{
+  if (m_mode != ArchiveMode || !m_archiveModel || !m_archiveModel->isOpen())
+    return false;
+  ArchiveSession *session = m_archiveModel->session();
+  if (!session)
+    return false;
+
+  const QString path = session->archivePath();
+  const QString formatHint = session->formatName();
+  const QString password = session->password();
+  const QString prefix = session->relativePath();
+  QString err;
+  if (!m_archiveModel->open(path, formatHint, progress, prompts, &err, password))
+  {
+    if (error) *error = err;
+    return false;
+  }
+  if (!prefix.isEmpty())
+    m_archiveModel->session()->enterPath(prefix);
+  if (m_flatMode)
+    m_archiveModel->setFlatMode(true);
+  m_archiveModel->refresh();
+  updatePathBar();
+  emit pathChanged(displayPath());
+  updateStatus();
+  return true;
+}
+
 QString FilePanel::localPath() const { return m_localModel->path(); }
 
 QString FilePanel::displayPath() const

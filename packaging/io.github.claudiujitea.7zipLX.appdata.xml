@@ -23,6 +23,11 @@
   </categories>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.3.0" date="2026-11-22">
+      <description>
+        <p>Fixes nested-archive editing failures, adds clear protection for read-only nested archives, modernizes all dialogs with aligned form fields and themed input/message prompts, and polishes control, tab and progress styling.</p>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-11-22">
       <description>
         <p>Dual-pane drag and drop between local folders and archives, multi-selection drags, folder-row drop targets, archive-to-archive transfers, cross-pane clipboard operations, active-pane highlighting and Tab switching.</p>

@@ -1,6 +1,8 @@
 #include "ExtractDialog.h"
+#include "DialogLayout.h"
 
 #include <QCheckBox>
+#include <QIcon>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFileDialog>
@@ -16,11 +18,12 @@
 ExtractDialog::ExtractDialog(QWidget *parent) : QDialog(parent)
 {
   setWindowTitle(QStringLiteral("Extract"));
-  setMinimumWidth(520);
+  setWindowIcon(QIcon());
+  setMinimumWidth(560);
 
   auto *layout = new QVBoxLayout(this);
-  layout->setContentsMargins(20, 18, 20, 16);
-  layout->setSpacing(10);
+  layout->setContentsMargins(24, 22, 24, 18);
+  layout->setSpacing(12);
   auto *heading = new QLabel(QStringLiteral("Extract Archive"), this);
   heading->setObjectName(QStringLiteral("dialogHeading"));
   layout->addWidget(heading);
@@ -28,13 +31,16 @@ ExtractDialog::ExtractDialog(QWidget *parent) : QDialog(parent)
   sub->setObjectName(QStringLiteral("dialogSubheading"));
   layout->addWidget(sub);
   auto *info = new QLabel(this);
-  info->setObjectName(QStringLiteral("archiveInfo"));
+  info->setObjectName(QStringLiteral("dialogInfo"));
   info->setWordWrap(true);
-  info->setStyleSheet(QStringLiteral("color:#a4aab3; padding-bottom:6px;"));
+  info->hide();
   layout->addWidget(info);
 
   auto *form = new QFormLayout();
+  configureDialogForm(form);
   auto *dirRow = new QHBoxLayout();
+  dirRow->setContentsMargins(0, 0, 0, 0);
+  dirRow->setSpacing(8);
   m_dir = new QLineEdit(this);
   m_dir->setText(QStandardPaths::writableLocation(QStandardPaths::HomeLocation));
   auto *browseButton = new QPushButton(QStringLiteral("Browse..."), this);
@@ -70,7 +76,6 @@ ExtractDialog::ExtractDialog(QWidget *parent) : QDialog(parent)
   connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
   connect(browseButton, &QPushButton::clicked, this, &ExtractDialog::browse);
   connect(m_showPassword, &QCheckBox::toggled, this, &ExtractDialog::updatePasswordState);
-  connect(m_dir, &QLineEdit::textChanged, this, [info](const QString &) { info->clear(); });
   setArchivePath(QString());
 }
 
@@ -78,8 +83,11 @@ void ExtractDialog::setArchivePath(const QString &path)
 {
   m_archivePath = path;
   setWindowTitle(path.isEmpty() ? QStringLiteral("Extract") : QStringLiteral("Extract - %1").arg(QFileInfo(path).fileName()));
-  if (auto *label = findChild<QLabel *>(QStringLiteral("archiveInfo")))
+  if (auto *label = findChild<QLabel *>(QStringLiteral("dialogInfo")))
+  {
     label->setText(path);
+    label->setVisible(!path.isEmpty());
+  }
 }
 
 void ExtractDialog::setDefaultOutputDir(const QString &dir)

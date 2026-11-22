@@ -14,6 +14,7 @@
 #include "backend/ProgressState.h"
 #include "backend/PromptDispatcher.h"
 #include "backend/CompressOperation.h"
+#include "backend/InputDialog.h"
 #include "backend/LocalFileOperation.h"
 #include "backend/SevenZipEngine.h"
 
@@ -22,7 +23,6 @@
 #include <QCloseEvent>
 #include <QProcess>
 #include <QFile>
-#include <QInputDialog>
 #include <QClipboard>
 #include <QMimeData>
 #include <QUrl>
@@ -40,7 +40,6 @@
 #include <QMenuBar>
 #include <QMenu>
 #include <QMessageBox>
-#include <QInputDialog>
 #include <QClipboard>
 #include <QMimeData>
 #include <QUrl>
@@ -334,6 +333,21 @@ void MainWindow::focusOtherPanel()
   other->focusView();
 }
 
+bool MainWindow::ensureWritableArchive(const QString &action)
+{
+  if (m_active && m_active->isArchive() && m_active->isNestedArchive())
+  {
+    m_prompts->showError(
+        action,
+        QStringLiteral("This is a nested archive opened from another archive.\n\n"
+                       "Only the temporary extracted copy could be changed, so editing is "
+                       "disabled. Extract the inner archive first, then open it from disk "
+                       "to edit it."));
+    return false;
+  }
+  return true;
+}
+
 void MainWindow::updateActions()
 {
   const bool archive = m_active && m_active->isArchive();
@@ -467,6 +481,15 @@ bool MainWindow::performTransfer(const PanelTransfer &transfer, FilePanel *targe
   ArchiveSession *targetSession = target->isArchive() ? target->archiveModel()->session() : nullptr;
   if (targetPath.archive)
   {
+    if (target->isNestedArchive())
+    {
+      m_prompts->showError(
+          QStringLiteral("Edit nested archive"),
+          QStringLiteral("The destination is a nested archive opened from another archive.\n\n"
+                         "Changes cannot be written back to the outer archive, so adding items "
+                         "is disabled. Extract the inner archive first, then open it from disk."));
+      return false;
+    }
     if (!targetSession)
     {
       m_prompts->showError(QStringLiteral("Transfer"),
@@ -678,15 +701,14 @@ bool MainWindow::performTransfer(const PanelTransfer &transfer, FilePanel *targe
 
   if (targetPath.archive)
   {
-    const QString archivePath = targetSession ? targetSession->archivePath() : QString();
     const QString prefix = targetPath.archivePrefix;
     QString error;
-    if (!target->openArchive(archivePath, nullptr, m_prompts, &error))
+    if (!target->reloadArchive(nullptr, m_prompts, &error))
     {
       m_prompts->showError(QStringLiteral("Reload archive"), error);
       return true;
     }
-    if (!prefix.isEmpty())
+    if (target->archiveRelativePath() != prefix && !prefix.isEmpty())
       target->enterArchivePath(prefix);
     if (target->archiveRelativePath() == prefix)
       selectTransferredItems(target, targetPath, transfer);
@@ -942,9 +964,11 @@ void MainWindow::calculateHash()
   const QStringList methods = {QStringLiteral("CRC32"), QStringLiteral("SHA1"), QStringLiteral("SHA256"),
                                QStringLiteral("SHA512"), QStringLiteral("MD5"), QStringLiteral("SHA3-256"),
                                QStringLiteral("BLAKE2sp"), QStringLiteral("XXH64"), QStringLiteral("CRC64")};
-  bool ok = false;
-  const QString method = QInputDialog::getItem(this, QStringLiteral("Hash"), QStringLiteral("Hash method:"), methods, 2, false, &ok);
-  if (!ok || method.isEmpty()) return;
+  QString method;
+  if (!InputDialog::getItem(this, QStringLiteral("Hash"), QStringLiteral("Hash"),
+                            QStringLiteral("Hash method:"), methods, 2, &method) ||
+      method.isEmpty())
+    return;
   HashOptions hopts;
   hopts.methods << method;
   const auto result = runOperation(QStringLiteral("Hashing"),
@@ -1143,10 +1167,10 @@ void MainWindow::splitFile()
     return;
   }
   const QString src = selected.first();
-  bool ok = false;
-  const int mib = QInputDialog::getInt(this, QStringLiteral("Split File"),
-                                       QStringLiteral("Volume size (MiB):"), 1, 1, 1024 * 64, 1, &ok);
-  if (!ok) return;
+  int mib = 1;
+  if (!InputDialog::getInt(this, QStringLiteral("Split File"), QStringLiteral("Split File"),
+                           QStringLiteral("Volume size (MiB):"), 1, 1024 * 64, 1, &mib))
+    return;
   QFile in(src);
   if (!in.open(QIODevice::ReadOnly))
   {
@@ -1231,6 +1255,8 @@ void MainWindow::renameSelected()
   if (!m_active) return;
   if (m_active->isArchive())
   {
+    if (!ensureWritableArchive(QStringLiteral("Rename")))
+      return;
     const QVector<int> rows = m_active->selectedArchiveRows();
     if (rows.size() != 1)
     {
@@ -1238,10 +1264,11 @@ void MainWindow::renameSelected()
       return;
     }
     const ArchiveEntryInfo &entry = m_active->archiveModel()->entry(rows.first());
-    bool ok = false;
-    const QString newName = QInputDialog::getText(this, QStringLiteral("Rename"), QStringLiteral("New name:"),
-                                                  QLineEdit::Normal, entry.name, &ok);
-    if (!ok || newName.isEmpty() || newName == entry.name) return;
+    QString newName = entry.name;
+    if (!InputDialog::getText(this, QStringLiteral("Rename"), QStringLiteral("Rename"),
+                              QStringLiteral("New name:"), &newName) ||
+        newName.isEmpty() || newName == entry.name)
+      return;
     ArchiveSession *session = m_active->archiveModel()->session();
     const auto result = runOperation(QStringLiteral("Renaming item"),
                                      [session, row = rows.first(), newName](ProgressState *state, PromptDispatcher *prompts) {
@@ -1260,10 +1287,11 @@ void MainWindow::renameSelected()
     return;
   }
   const QFileInfo fi(selected.first());
-  bool ok = false;
-  const QString newName = QInputDialog::getText(this, QStringLiteral("Rename"), QStringLiteral("New name:"),
-                                                QLineEdit::Normal, fi.fileName(), &ok);
-  if (!ok || newName.isEmpty() || newName == fi.fileName()) return;
+  QString newName = fi.fileName();
+  if (!InputDialog::getText(this, QStringLiteral("Rename"), QStringLiteral("Rename"),
+                            QStringLiteral("New name:"), &newName) ||
+      newName.isEmpty() || newName == fi.fileName())
+    return;
   const QString dest = fi.absolutePath() + QLatin1Char('/') + newName;
   const bool renamed = fi.isDir() ? QDir().rename(fi.absoluteFilePath(), dest)
                                   : QFile::rename(fi.absoluteFilePath(), dest);
@@ -1277,6 +1305,8 @@ void MainWindow::deleteSelected()
   if (!m_active) return;
   if (m_active->isArchive())
   {
+    if (!ensureWritableArchive(QStringLiteral("Delete")))
+      return;
     const QVector<int> rows = m_active->selectedArchiveRows();
     if (rows.isEmpty()) return;
     if (!m_prompts->confirm(QStringLiteral("Delete from archive"),
@@ -1365,10 +1395,12 @@ void MainWindow::createFolder()
   if (!m_active) return;
   if (m_active->isArchive())
   {
-    bool ok = false;
-    const QString name = QInputDialog::getText(this, QStringLiteral("Create Folder"), QStringLiteral("Folder name:"),
-                                               QLineEdit::Normal, QStringLiteral("New Folder"), &ok);
-    if (!ok || name.isEmpty()) return;
+    if (!ensureWritableArchive(QStringLiteral("Create folder")))
+      return;
+    QString name = QStringLiteral("New Folder");
+    if (!InputDialog::getText(this, QStringLiteral("Create Folder"), QStringLiteral("Create Folder"),
+                              QStringLiteral("Folder name:"), &name) || name.isEmpty())
+      return;
     ArchiveSession *session = m_active->archiveModel()->session();
     const auto result = runOperation(QStringLiteral("Creating folder"),
                                      [session, name](ProgressState *state, PromptDispatcher *prompts) {
@@ -1380,10 +1412,10 @@ void MainWindow::createFolder()
     updateActions();
     return;
   }
-  bool ok = false;
-  const QString name = QInputDialog::getText(this, QStringLiteral("Create Folder"), QStringLiteral("Folder name:"),
-                                             QLineEdit::Normal, QStringLiteral("New Folder"), &ok);
-  if (!ok || name.isEmpty()) return;
+  QString name = QStringLiteral("New Folder");
+  if (!InputDialog::getText(this, QStringLiteral("Create Folder"), QStringLiteral("Create Folder"),
+                            QStringLiteral("Folder name:"), &name) || name.isEmpty())
+    return;
   if (!QDir(m_active->localPath()).mkdir(name))
     m_prompts->showError(QStringLiteral("Create Folder"), QStringLiteral("Cannot create folder."));
   m_active->refresh();
@@ -1571,14 +1603,15 @@ void MainWindow::editComment()
     m_prompts->showInfo(QStringLiteral("Comment"), QStringLiteral("Comments are supported for archive items (ZIP)."));
     return;
   }
+  if (!ensureWritableArchive(QStringLiteral("Comment")))
+    return;
   const int row = m_active->currentRow();
   if (row < 0) return;
   const ArchiveEntryInfo &entry = m_active->archiveModel()->entry(row);
-  bool ok = false;
-  const QString comment = QInputDialog::getMultiLineText(this, QStringLiteral("Comment"),
-                                                        QStringLiteral("Comment for %1:").arg(entry.name),
-                                                        entry.comment, &ok);
-  if (!ok) return;
+  QString comment = entry.comment;
+  if (!InputDialog::getMultiLineText(this, QStringLiteral("Comment"), QStringLiteral("Comment"),
+                                     QStringLiteral("Comment for %1:").arg(entry.name), &comment))
+    return;
   ArchiveSession *session = m_active->archiveModel()->session();
   const auto result = runOperation(QStringLiteral("Saving comment"),
                                    [session, row, comment](ProgressState *state, PromptDispatcher *prompts) {
@@ -1603,15 +1636,16 @@ void MainWindow::createLink()
     return;
   }
   const QFileInfo source(selected.first());
-  bool ok = false;
   const QStringList types = {QStringLiteral("Symbolic link"), QStringLiteral("Hard link")};
-  const QString type = QInputDialog::getItem(this, QStringLiteral("Create Link"), QStringLiteral("Link type:"), types, 0, false, &ok);
-  if (!ok) return;
-  const QString linkPath = QInputDialog::getText(this, QStringLiteral("Create Link"), QStringLiteral("Link path:"),
-                                                 QLineEdit::Normal,
-                                                 source.absolutePath() + QLatin1Char('/') + source.fileName() + QStringLiteral(" link"),
-                                                 &ok);
-  if (!ok || linkPath.isEmpty()) return;
+  QString type;
+  if (!InputDialog::getItem(this, QStringLiteral("Create Link"), QStringLiteral("Create Link"),
+                            QStringLiteral("Link type:"), types, 0, &type))
+    return;
+  QString linkPath = source.absolutePath() + QLatin1Char('/') + source.fileName() + QStringLiteral(" link");
+  if (!InputDialog::getText(this, QStringLiteral("Create Link"), QStringLiteral("Create Link"),
+                            QStringLiteral("Link path:"), &linkPath) ||
+      linkPath.isEmpty())
+    return;
   if (QFileInfo::exists(linkPath))
   {
     m_prompts->showError(QStringLiteral("Create Link"), QStringLiteral("The link path already exists:\n%1").arg(linkPath));
@@ -1634,10 +1668,10 @@ void MainWindow::createLink()
 void MainWindow::createFile()
 {
   if (!m_active || m_active->isArchive()) return;
-  bool ok = false;
-  const QString name = QInputDialog::getText(this, QStringLiteral("Create File"), QStringLiteral("File name:"),
-                                             QLineEdit::Normal, QStringLiteral("New File.txt"), &ok);
-  if (!ok || name.isEmpty()) return;
+  QString name = QStringLiteral("New File.txt");
+  if (!InputDialog::getText(this, QStringLiteral("Create File"), QStringLiteral("Create File"),
+                            QStringLiteral("File name:"), &name) || name.isEmpty())
+    return;
   QFile f(m_active->localPath() + QLatin1Char('/') + name);
   if (!f.open(QIODevice::WriteOnly))
     m_prompts->showError(QStringLiteral("Create File"), QStringLiteral("Cannot create file."));

@@ -1,8 +1,10 @@
 #include "ProgressDialog.h"
+#include "DialogLayout.h"
 #include "backend/ProgressState.h"
 
 #include <QCloseEvent>
 #include <QFormLayout>
+#include <QIcon>
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QProgressBar>
@@ -17,27 +19,33 @@ ProgressDialog::ProgressDialog(ProgressState *state, const QString &title, QWidg
     : QDialog(parent), m_state(state)
 {
   setWindowTitle(title);
+  setWindowIcon(QIcon());
   setWindowModality(Qt::ApplicationModal);
-  setMinimumWidth(560);
+  setMinimumWidth(600);
   setSizeGripEnabled(true);
+  setObjectName(QStringLiteral("progressDialog"));
 
   auto *layout = new QVBoxLayout(this);
+  layout->setContentsMargins(24, 22, 24, 18);
+  layout->setSpacing(12);
+
   m_title = new QLabel(title, this);
-  QFont f = m_title->font();
-  f.setBold(true);
-  m_title->setFont(f);
+  m_title->setObjectName(QStringLiteral("dialogHeading"));
   layout->addWidget(m_title);
 
   m_status = new QLabel(QStringLiteral("Preparing..."), this);
+  m_status->setObjectName(QStringLiteral("progressStatus"));
   m_status->setWordWrap(true);
   layout->addWidget(m_status);
 
   m_file = new QLabel(this);
+  m_file->setObjectName(QStringLiteral("progressFile"));
   m_file->setWordWrap(true);
   m_file->setTextInteractionFlags(Qt::TextSelectableByMouse);
   layout->addWidget(m_file);
 
   auto *form = new QFormLayout();
+  configureDialogForm(form);
   m_bytesBar = new QProgressBar(this);
   m_bytesBar->setRange(0, 1000);
   m_bytesBar->setValue(0);
@@ -47,19 +55,24 @@ ProgressDialog::ProgressDialog(ProgressState *state, const QString &title, QWidg
   m_filesBar->setValue(0);
   form->addRow(QStringLiteral("Files:"), m_filesBar);
   m_stats = new QLabel(this);
+  m_stats->setObjectName(QStringLiteral("progressStats"));
   form->addRow(QString(), m_stats);
   layout->addLayout(form);
 
   m_messages = new QPlainTextEdit(this);
+  m_messages->setObjectName(QStringLiteral("progressMessages"));
   m_messages->setReadOnly(true);
   m_messages->setMaximumBlockCount(1000);
-  m_messages->setMinimumHeight(110);
-  layout->addWidget(m_messages);
+  m_messages->setMinimumHeight(130);
+  m_messages->setPlaceholderText(QStringLiteral("Operation details will appear here."));
+  layout->addWidget(m_messages, 1);
 
   auto *buttons = new QHBoxLayout();
+  buttons->setContentsMargins(0, 4, 0, 0);
   buttons->addStretch();
   m_cancel = new QPushButton(QStringLiteral("Cancel"), this);
   m_cancel->setAutoDefault(false);
+  m_cancel->setMinimumWidth(100);
   buttons->addWidget(m_cancel);
   layout->addLayout(buttons);
 

@@ -1,12 +1,11 @@
 #include "PromptDispatcher.h"
+#include "InputDialog.h"
+#include "MessageDialog.h"
 
 #include <QApplication>
-#include <QInputDialog>
-#include <QLineEdit>
-#include <QMessageBox>
-#include <QPushButton>
-#include <QAbstractButton>
+#include <QDialogButtonBox>
 #include <QLocale>
+#include <QPushButton>
 #include <QThread>
 #include <utility>
 
@@ -42,19 +41,9 @@ bool PromptDispatcher::askPassword(QString *password, bool *ok, const QString &t
   bool accepted = false;
   QString value;
   onMain([&] {
-    bool dialogOk = false;
-    const QString text = QInputDialog::getText(
-        nullptr,
-        title.isEmpty() ? tr("Password required") : title,
-        tr("Enter password:"),
-        QLineEdit::Password,
-        QString(),
-        &dialogOk);
-    if (dialogOk)
-    {
-      value = text;
-      accepted = true;
-    }
+    const QString dialogTitle = title.isEmpty() ? tr("Password required") : title;
+    accepted = InputDialog::getText(QApplication::activeWindow(), dialogTitle, dialogTitle,
+                                    tr("Password:"), &value, true);
   });
   if (password)
     *password = value;
@@ -67,35 +56,36 @@ OverwriteAnswer PromptDispatcher::askOverwrite(const OverwriteInfo &info)
 {
   OverwriteAnswer answer = OverwriteAnswer::Cancel;
   onMain([&] {
-    QMessageBox box;
-    box.setIcon(QMessageBox::NoIcon);
-    box.setWindowTitle(tr("Confirm File Replace"));
-    box.setTextFormat(Qt::RichText);
+    MessageDialog dialog(QApplication::activeWindow());
+    dialog.setWindowTitle(tr("Confirm File Replace"));
+    dialog.setKind(MessageDialog::Kind::Question);
+    dialog.setHeading(tr("Replace file?"));
     const QString existingTime = info.existingTime.isValid() ? QLocale().toString(info.existingTime, QLocale::ShortFormat) : tr("unknown");
     const QString newTime = info.newTime.isValid() ? QLocale().toString(info.newTime, QLocale::ShortFormat) : tr("unknown");
-    box.setText(tr("<b>%1</b> already exists.<br><br>"
-                   "Existing: %2, %3<br>"
-                   "New: %4, %5<br><br>"
-                   "Do you want to replace it?")
-                    .arg(info.existingName.toHtmlEscaped(),
-                         sizeText(info.existingSize, info.existingSizeKnown),
-                         existingTime.toHtmlEscaped(),
-                         sizeText(info.newSize, info.newSizeKnown),
-                         newTime.toHtmlEscaped()));
-    QPushButton *yes = box.addButton(tr("Yes"), QMessageBox::AcceptRole);
-    QPushButton *yesAll = box.addButton(tr("Yes to All"), QMessageBox::AcceptRole);
-    QPushButton *no = box.addButton(tr("No"), QMessageBox::RejectRole);
-    QPushButton *noAll = box.addButton(tr("No to All"), QMessageBox::RejectRole);
-    QPushButton *autoRename = box.addButton(tr("Auto Rename"), QMessageBox::ActionRole);
-    QAbstractButton *cancel = box.addButton(QMessageBox::Cancel);
-    box.setDefaultButton(yes);
-    box.exec();
-    if (box.clickedButton() == yes) answer = OverwriteAnswer::Yes;
-    else if (box.clickedButton() == yesAll) answer = OverwriteAnswer::YesToAll;
-    else if (box.clickedButton() == no) answer = OverwriteAnswer::No;
-    else if (box.clickedButton() == noAll) answer = OverwriteAnswer::NoToAll;
-    else if (box.clickedButton() == autoRename) answer = OverwriteAnswer::AutoRename;
-    else if (box.clickedButton() == cancel) answer = OverwriteAnswer::Cancel;
+    dialog.setText(tr("<b>%1</b> already exists.<br><br>"
+                      "<span style='color:#9aa2ad'>Existing</span><br>%2 &middot; %3<br><br>"
+                      "<span style='color:#9aa2ad'>New</span><br>%4 &middot; %5<br><br>"
+                      "Do you want to replace it?")
+                       .arg(info.existingName.toHtmlEscaped(),
+                            sizeText(info.existingSize, info.existingSizeKnown),
+                            existingTime.toHtmlEscaped(),
+                            sizeText(info.newSize, info.newSizeKnown),
+                            newTime.toHtmlEscaped()),
+                   true);
+    QPushButton *yes = dialog.addButton(tr("Yes"), QDialogButtonBox::AcceptRole);
+    QPushButton *yesAll = dialog.addButton(tr("Yes to All"), QDialogButtonBox::AcceptRole);
+    QPushButton *no = dialog.addButton(tr("No"), QDialogButtonBox::RejectRole);
+    QPushButton *noAll = dialog.addButton(tr("No to All"), QDialogButtonBox::RejectRole);
+    QPushButton *autoRename = dialog.addButton(tr("Auto Rename"), QDialogButtonBox::ActionRole);
+    QPushButton *cancel = dialog.addButton(tr("Cancel"), QDialogButtonBox::RejectRole);
+    dialog.setDefaultButton(yes);
+    dialog.exec();
+    if (dialog.clickedButton() == yes) answer = OverwriteAnswer::Yes;
+    else if (dialog.clickedButton() == yesAll) answer = OverwriteAnswer::YesToAll;
+    else if (dialog.clickedButton() == no) answer = OverwriteAnswer::No;
+    else if (dialog.clickedButton() == noAll) answer = OverwriteAnswer::NoToAll;
+    else if (dialog.clickedButton() == autoRename) answer = OverwriteAnswer::AutoRename;
+    else if (dialog.clickedButton() == cancel) answer = OverwriteAnswer::Cancel;
   });
   return answer;
 }
@@ -104,9 +94,7 @@ bool PromptDispatcher::confirm(const QString &title, const QString &text, bool d
 {
   bool accepted = false;
   onMain([&] {
-    QMessageBox box(QMessageBox::NoIcon, title, text, QMessageBox::Yes | QMessageBox::No);
-    box.setDefaultButton(dangerous ? QMessageBox::No : QMessageBox::Yes);
-    accepted = (box.exec() == QMessageBox::Yes);
+    accepted = MessageDialog::confirm(QApplication::activeWindow(), title, title, text, dangerous);
   });
   return accepted;
 }
@@ -114,15 +102,15 @@ bool PromptDispatcher::confirm(const QString &title, const QString &text, bool d
 void PromptDispatcher::showError(const QString &title, const QString &text)
 {
   onMain([&] {
-    QMessageBox box(QMessageBox::NoIcon, title, text, QMessageBox::Ok);
-    box.exec();
+    MessageDialog::show(QApplication::activeWindow(), title, title, text,
+                        MessageDialog::Kind::Error);
   });
 }
 
 void PromptDispatcher::showInfo(const QString &title, const QString &text)
 {
   onMain([&] {
-    QMessageBox box(QMessageBox::NoIcon, title, text, QMessageBox::Ok);
-    box.exec();
+    MessageDialog::show(QApplication::activeWindow(), title, title, text,
+                        MessageDialog::Kind::Information);
   });
 }

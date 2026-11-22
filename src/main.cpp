@@ -1,4 +1,5 @@
 #include "app/MainWindow.h"
+#include "backend/MessageDialog.h"
 #include "backend/SevenZipEngine.h"
 #include "ui/Theme.h"
 
@@ -8,7 +9,6 @@
 #include <QLibraryInfo>
 #include <QTranslator>
 #include <QDir>
-#include <QMessageBox>
 #include <QIcon>
 
 int main(int argc, char **argv)
@@ -18,7 +18,7 @@ int main(int argc, char **argv)
   QApplication::setApplicationDisplayName(QStringLiteral("7zipLX"));
   QApplication::setOrganizationName(QStringLiteral("7zipLX"));
   QApplication::setOrganizationDomain(QStringLiteral("7ziplx.local"));
-  QApplication::setApplicationVersion(QStringLiteral("0.2.0"));
+  QApplication::setApplicationVersion(QStringLiteral("0.3.0"));
   Theme::apply(app);
   QApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/7ziplx-256.png")));
 
@@ -53,7 +53,8 @@ int main(int argc, char **argv)
   QString error;
   if (!SevenZipEngine::instance().initialize(&error))
   {
-    QMessageBox::critical(nullptr, QStringLiteral("7zipLX"), error);
+    MessageDialog::show(nullptr, QStringLiteral("7zipLX"), QStringLiteral("Cannot start 7zipLX"),
+                        error, MessageDialog::Kind::Error);
     return 1;
   }
 

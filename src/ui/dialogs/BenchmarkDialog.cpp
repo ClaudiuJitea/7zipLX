@@ -1,6 +1,8 @@
 #include "BenchmarkDialog.h"
+#include "DialogLayout.h"
 
 #include <QComboBox>
+#include <QIcon>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QLabel>
@@ -16,8 +18,8 @@ BenchmarkDialog::BenchmarkDialog(QWidget *parent) : QDialog(parent)
   setMinimumSize(640, 500);
 
   auto *layout = new QVBoxLayout(this);
-  layout->setContentsMargins(20, 18, 20, 16);
-  layout->setSpacing(10);
+  layout->setContentsMargins(24, 22, 24, 18);
+  layout->setSpacing(12);
   auto *heading = new QLabel(QStringLiteral("Benchmark"), this);
   heading->setObjectName(QStringLiteral("dialogHeading"));
   layout->addWidget(heading);
@@ -27,6 +29,7 @@ BenchmarkDialog::BenchmarkDialog(QWidget *parent) : QDialog(parent)
   layout->addWidget(sub);
 
   auto *form = new QFormLayout();
+  configureDialogForm(form);
   m_method = new QComboBox(this);
   m_method->addItems({QStringLiteral("LZMA2"), QStringLiteral("LZMA")});
   form->addRow(QStringLiteral("Method:"), m_method);

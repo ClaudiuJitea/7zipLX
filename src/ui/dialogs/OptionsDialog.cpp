@@ -1,9 +1,12 @@
 #include "OptionsDialog.h"
+#include "DialogLayout.h"
+#include "backend/MessageDialog.h"
 
 #include <QApplication>
 #include <QCoreApplication>
 #include "backend/SevenZipEngine.h"
 #include <QCheckBox>
+#include <QIcon>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -13,7 +16,6 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
-#include <QMessageBox>
 #include <QProcess>
 #include <QPushButton>
 #include <QStandardPaths>
@@ -29,8 +31,8 @@ OptionsDialog::OptionsDialog(bool showHidden, bool showDots, bool showGrid, bool
   setWindowIcon(QIcon());
   setMinimumSize(560, 430);
   auto *layout = new QVBoxLayout(this);
-  layout->setContentsMargins(18, 16, 18, 14);
-  layout->setSpacing(10);
+  layout->setContentsMargins(24, 22, 24, 18);
+  layout->setSpacing(12);
   auto *heading = new QLabel(QStringLiteral("Options"), this);
   heading->setObjectName(QStringLiteral("dialogHeading"));
   layout->addWidget(heading);
@@ -44,8 +46,11 @@ OptionsDialog::OptionsDialog(bool showHidden, bool showDots, bool showGrid, bool
 
   auto *general = new QWidget(tabs);
   auto *generalLayout = new QVBoxLayout(general);
+  generalLayout->setContentsMargins(14, 14, 14, 14);
   auto *listGroup = new QGroupBox(QStringLiteral("File list"), general);
   auto *listForm = new QVBoxLayout(listGroup);
+  listForm->setContentsMargins(14, 18, 14, 14);
+  listForm->setSpacing(8);
   m_hidden = new QCheckBox(QStringLiteral("Show hidden files"), listGroup);
   m_hidden->setChecked(showHidden);
   listForm->addWidget(m_hidden);
@@ -64,6 +69,8 @@ OptionsDialog::OptionsDialog(bool showHidden, bool showDots, bool showGrid, bool
 
   auto *tools = new QWidget(tabs);
   auto *toolsForm = new QFormLayout(tools);
+  configureDialogForm(toolsForm);
+  toolsForm->setContentsMargins(14, 14, 14, 14);
   m_viewer = new QLineEdit(viewer, tools);
   m_viewer->setPlaceholderText(QStringLiteral("xdg-open"));
   toolsForm->addRow(QStringLiteral("Viewer command:"), m_viewer);
@@ -81,6 +88,7 @@ OptionsDialog::OptionsDialog(bool showHidden, bool showDots, bool showGrid, bool
 
   auto *plugins = new QWidget(tabs);
   auto *pluginLayout = new QVBoxLayout(plugins);
+  pluginLayout->setContentsMargins(14, 14, 14, 14);
   auto *pluginInfo = new QLabel(plugins);
   pluginInfo->setWordWrap(true);
   pluginInfo->setTextFormat(Qt::RichText);
@@ -109,6 +117,7 @@ OptionsDialog::OptionsDialog(bool showHidden, bool showDots, bool showGrid, bool
 
   auto *assoc = new QWidget(tabs);
   auto *assocLayout = new QVBoxLayout(assoc);
+  assocLayout->setContentsMargins(14, 14, 14, 14);
   auto *assocNote = new QLabel(QStringLiteral("Register 7zipLX as a desktop handler for archive MIME types. The desktop file must already be installed."), assoc);
   assocNote->setWordWrap(true);
   assocLayout->addWidget(assocNote);
@@ -120,6 +129,8 @@ OptionsDialog::OptionsDialog(bool showHidden, bool showDots, bool showGrid, bool
 
   auto *languagePage = new QWidget(tabs);
   auto *languageForm = new QFormLayout(languagePage);
+  configureDialogForm(languageForm);
+  languageForm->setContentsMargins(14, 14, 14, 14);
   m_language = new QComboBox(languagePage);
   m_language->addItem(QStringLiteral("System default"), QStringLiteral("system"));
   m_language->addItem(QStringLiteral("English"), QStringLiteral("en"));
@@ -178,11 +189,13 @@ void OptionsDialog::setDefaultAssociation()
       failed << mime;
   }
   if (failed.isEmpty())
-    QMessageBox::information(this, QStringLiteral("Associations"),
-                             QStringLiteral("Requested default handlers. The desktop file must be installed for this to take effect."));
+    MessageDialog::show(this, QStringLiteral("Associations"), QStringLiteral("Associations"),
+                        QStringLiteral("Requested default handlers. The desktop file must be installed for this to take effect."),
+                        MessageDialog::Kind::Information);
   else
-    QMessageBox::warning(this, QStringLiteral("Associations"),
-                         QStringLiteral("Could not run xdg-mime for: %1").arg(failed.join(QStringLiteral(", "))));
+    MessageDialog::show(this, QStringLiteral("Associations"), QStringLiteral("Associations"),
+                        QStringLiteral("Could not run xdg-mime for: %1").arg(failed.join(QStringLiteral(", "))),
+                        MessageDialog::Kind::Warning);
 }
 
 void OptionsDialog::browseTranslations()

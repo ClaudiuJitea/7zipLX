@@ -80,6 +80,7 @@ private:
   bool performTransfer(const PanelTransfer &transfer, FilePanel *target,
                        const PanelDropTarget &targetPath, Qt::DropAction action,
                        bool confirmMove = false);
+  bool ensureWritableArchive(const QString &action);
   FilePanel *panelById(int id) const;
   void setClipboardFromSelection(bool cut);
   void selectTransferredItems(FilePanel *target, const PanelDropTarget &targetPath,

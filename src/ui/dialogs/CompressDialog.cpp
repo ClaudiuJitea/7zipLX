@@ -1,10 +1,12 @@
 #include "CompressDialog.h"
+#include "DialogLayout.h"
 #include "backend/SevenZipEngine.h"
 
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QIcon>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -19,11 +21,12 @@ CompressDialog::CompressDialog(const QStringList &files, const QString &defaultD
     : QDialog(parent), m_files(files)
 {
   setWindowTitle(QStringLiteral("Add to Archive"));
-  setMinimumWidth(560);
+  setWindowIcon(QIcon());
+  setMinimumWidth(580);
 
   auto *layout = new QVBoxLayout(this);
-  layout->setContentsMargins(20, 18, 20, 16);
-  layout->setSpacing(10);
+  layout->setContentsMargins(24, 22, 24, 18);
+  layout->setSpacing(12);
   auto *heading = new QLabel(QStringLiteral("Add to Archive"), this);
   heading->setObjectName(QStringLiteral("dialogHeading"));
   layout->addWidget(heading);
@@ -31,12 +34,15 @@ CompressDialog::CompressDialog(const QStringList &files, const QString &defaultD
   sub->setObjectName(QStringLiteral("dialogSubheading"));
   layout->addWidget(sub);
   auto *info = new QLabel(QStringLiteral("%1 item(s) selected").arg(files.size()), this);
+  info->setObjectName(QStringLiteral("dialogInfo"));
   info->setWordWrap(true);
-  info->setStyleSheet(QStringLiteral("color:#a4aab3; padding-bottom:6px;"));
   layout->addWidget(info);
 
   auto *form = new QFormLayout();
+  configureDialogForm(form);
   auto *pathRow = new QHBoxLayout();
+  pathRow->setContentsMargins(0, 0, 0, 0);
+  pathRow->setSpacing(8);
   m_archivePath = new QLineEdit(this);
   auto *browseButton = new QPushButton(QStringLiteral("Browse..."), this);
   pathRow->addWidget(m_archivePath, 1);

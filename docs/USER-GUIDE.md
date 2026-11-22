@@ -53,6 +53,8 @@ When creating an archive, enter a password in the Compress dialog. For 7z, enabl
 
 Double-click an archive file inside an archive panel to browse it as a nested archive. `Backspace` at the nested root returns to the parent archive. `View > Flat View` shows nested local or archive items in one flat list.
 
+Nested archives are read-only for editing. Rename, delete, create-folder, comment and drag-in operations are blocked with an explanation because changes to the temporary inner archive cannot be written back to the outer archive. Extract the inner archive first, then open it from disk to edit it. Extraction, testing, viewing and hashing nested items remain available.
+
 ## Dual-pane transfers and clipboard
 
 Select any number of items with `Ctrl`/`Shift`-click or `Ctrl+A`. Starting a
