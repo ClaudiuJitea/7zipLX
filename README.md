@@ -12,17 +12,12 @@
   <img alt="Platform: Linux" src="https://img.shields.io/badge/platform-Linux-2ea44f?logo=linux&logoColor=white">
   <img alt="Qt 6.5+" src="https://img.shields.io/badge/Qt-6.5%2B-41cd52?logo=qt&logoColor=white">
   <img alt="7-Zip 26.06" src="https://img.shields.io/badge/engine-7--Zip%2026.06-cc0000">
-  <img alt="Status: MVP" src="https://img.shields.io/badge/status-MVP-orange">
+  <img alt="Version 0.4.0" src="https://img.shields.io/badge/version-0.4.0-blue">
 </p>
 
-7zipLX is a two-panel Linux archive manager in the spirit of the classic
-7-Zip File Manager. It is a native Qt 6 application — not a Wine wrapper or a
-front-end to the `7z` command-line tool. The archive engine is compiled directly
-into the app from the portable 7-Zip 26.06 sources.
-
-It can browse, extract, create and edit archives, handle encrypted files and
-encrypted headers, compare files, calculate hashes, split/combine files and
-manage local files in a familiar dual-pane layout.
+7zipLX is a two-panel Linux archive manager in the spirit of the classic 7-Zip
+File Manager. The 7-Zip 26.06 engine is compiled directly into the app — no Wine
+wrapper and no external `7z` process.
 
 Project repository: [github.com/ClaudiuJitea/7zipLX](https://github.com/ClaudiuJitea/7zipLX)
 
@@ -30,141 +25,91 @@ Project repository: [github.com/ClaudiuJitea/7zipLX](https://github.com/ClaudiuJ
 
 ## Highlights
 
-- **Native Linux UI** — Qt 6 Widgets with a polished dark theme.
-- **Real 7-Zip engine** — archive formats, codecs, crypto and editing come from
-  7-Zip 26.06, not an external CLI process.
-- **Two-panel workflow** — drag and drop or use `F5` / `F6` to copy and move
-  between local folders and archives, with multi-selection preserved.
-- **Full archive operations** — open, browse, extract, test, create, update,
-  rename, delete and hash archive items.
-- **Encryption support** — password-protected archives and encrypted 7z headers.
-- **Familiar context menus** — 7-Zip File Manager-style menus for local files
-  and archive contents.
-- **Linux desktop integration** — desktop entry, AppStream metadata, hicolor
-  icons, XDG associations and installable `.deb` / AppImage packages.
-
-## Screenshots
-
-### Browse local files and archives side by side
-
-The left panel can show an archive while the right panel browses the local
-filesystem. Drag and drop, copy/move and archive editing work across both panels.
-
-![Main window showing an archive and local folder](docs/screenshots/main-window.png)
-
-### Dual-pane drag and drop
-
-- Drag a complete multi-selection (`Ctrl+A`, `Ctrl`/`Shift`-click) without losing
-  the rows you started the drag from.
-- Drop on a folder row to use that folder as the destination; archive folder
-  rows add items inside that archive folder.
-- Plain drag or `Ctrl` copies; `Shift` moves. Local, archive and mixed
-  local/archive transfers are supported in both directions.
-- `Tab` / `Shift+Tab` switch the active panel. The active panel has a distinct
-  border and status bar.
-- `Ctrl+X` / `Ctrl+C` / `Ctrl+V` work across panels and archives, including a
-  clipboard taken from an archive panel that has since been closed.
-
-### Right-click menus
-
-The local-files menu includes the **7-Zip** submenu, open/extract/test actions,
-file operations, hashes, split/combine and creation actions. The archive panel
-adds extraction, testing, comments and in-archive editing.
-
-| Local files | Archive contents |
-| :---: | :---: |
-| <img src="docs/screenshots/context-menu-local.png" width="300" alt="Local files context menu"> | <img src="docs/screenshots/context-menu-archive.png" width="300" alt="Archive context menu"> |
-
-### Create and extract archives
-
-Compression supports format selection, levels, methods, dictionaries, solid
-blocks, thread count, split volumes and passwords. Extraction supports full or
-flat paths, overwrite policies and password entry.
-
-| Add to Archive | Extract Archive |
-| :---: | :---: |
-| <img src="docs/screenshots/compress-dialog.png" width="430" alt="Add to Archive dialog"> | <img src="docs/screenshots/extract-dialog.png" width="430" alt="Extract Archive dialog"> |
-
-### Configure the workspace
-
-Options cover the file list, external viewer/editor/diff tools, plugin status,
-MIME associations and language selection.
-
-<p align="center">
-  <img src="docs/screenshots/options-dialog.png" width="620" alt="Options dialog">
-</p>
+- **Native dual-pane UI** — Qt 6 Widgets, dark Fusion-based theme, active-pane
+  highlighting and `Tab` switching.
+- **Real 7-Zip engine** — formats, codecs, crypto and archive editing come from
+  7-Zip 26.06 itself.
+- **Practical drag and drop** — multi-selection preserved, folder-row targets,
+  local ↔ archive and archive ↔ archive transfers; `Shift` moves, plain/`Ctrl`
+  copies.
+- **Cross-pane clipboard** — cut/copy/paste between local folders and archives;
+  a stale archive clipboard reopens its source archive.
+- **Nested archives** — browse and edit them. Changes are written back to the
+  parent archive recursively; 7z/ZIP/TAR are updated in place, GZip/BZip2/XZ
+  parents are rebuilt atomically.
+- **Full archive toolset** — extract, test, create, update, rename, delete,
+  comments, encryption, hashes, split/combine and benchmarks.
+- **Linux integration** — desktop entry, AppStream metadata, icons, optional
+  external `7z.so` module, `.deb` and AppImage packages.
 
 ## Features
 
-### Archive browsing
+### Dual-pane workflow
+
+- Multi-item drag and drop with `Ctrl+A` / `Ctrl` / `Shift` selection.
+- Local ↔ local, local ↔ archive and archive ↔ archive transfers.
+- Drop on a folder row to choose the destination; archive folder rows add inside
+  that archive folder.
+- `F5` / `F6` copy or move to the other panel.
+- Clipboard cut/copy/paste across panes and archives.
+- Active panel border/status, selected size display and persistent selections.
+- Selection-preserving refreshes, sorting and archive updates.
+
+### Archives
 
 - Open 7z, ZIP, TAR, GZip, BZip2, XZ, RAR (read-only), ISO, WIM, CAB, ARJ, LZH,
-  Zstandard and the other formats compiled into the 7-Zip engine.
-- Browse folders inside archives with breadcrumb navigation.
-- Open archives nested inside other archives.
-- Edit nested archives; changes are written back to the parent container when the
-  outer format supports updating.
-- Flat view for showing nested items in one list.
-- Sort by name, size, packed size, modified time, attributes, CRC, method or
-  encryption status.
-- Display file names, sizes, packed sizes, timestamps, attributes, CRC and
-  methods.
-
-### Extract, create and edit
-
-- Extract selected items or the whole archive.
-- Choose full paths, flat paths or no paths.
-- Ask before overwrite, overwrite, skip or rename on conflict.
-- Create 7z, ZIP, TAR and other writable formats.
-- Update existing archives with new files.
-- Create folders and files inside updatable archives.
-- Rename and delete archive items where the format supports editing.
-- Create split volumes and combine split files.
-- Copy and move items between two archives through a temporary extraction.
+  Zstandard and the other formats compiled into the engine.
+- Browse archive folders, nested archives and a flat all-items view.
+- Extract selected items or everything; full/current/no/absolute path modes and
+  ask/overwrite/skip/rename conflict handling.
+- Create 7z, ZIP, TAR and other writable formats; update existing archives.
+- Rename, delete, create folders/files and edit comments where supported.
+- Nested-archive write-back for update-capable parents; split-volume and
+  read-only outer formats are rejected with an explanation before editing.
+- Archive-to-archive copy through temporary extraction.
 
 ### Security and integrity
 
-- Password-protected archives.
-- Encrypted 7z headers, including password prompting before listing.
-- Wrong-password and cancellation handling.
+- Password-protected archives and encrypted 7z headers.
+- Password prompting before listing/open/extract; wrong-password and cancel
+  handling.
 - Archive testing and CRC inspection.
-- Hash calculation with CRC32, CRC64, MD5, SHA-1, SHA-256, SHA-512, SHA3-256,
-  BLAKE2sp, XXH64 and other engine-supported methods.
+- Hashes: CRC32, CRC64, MD5, SHA-1, SHA-256, SHA-512, SHA3-256, BLAKE2sp,
+  XXH64 and other engine methods.
 
-### Local file manager
+### Local file manager and tools
 
-- Two-panel local filesystem browsing.
-- Mount view for quickly reaching filesystems and the home folder.
+- Mount view, favorites and persisted window/panel settings.
 - Create, rename, copy, move, delete and link files/folders.
-- Clipboard cut/copy/paste across local folders and archives.
-- Drag and drop between both panels and from desktop file managers.
-- Drop-on-folder targets, archive-to-archive transfers and selection-preserving
-  multi-item drags.
-- Favorites and persisted window/panel settings.
 - External viewer, editor and diff commands.
 - ZIP item comments.
-- Split/combine files.
-- LZMA/LZMA2 benchmark tool.
+- Split/combine files and LZMA/LZMA2 benchmark.
+- Drag and drop from desktop file managers.
 
-### Linux integration
+### Dialogs and desktop integration
 
-- Dark Fusion-based theme with rounded panels, menus and dialogs.
-- Monochrome toolbar icons and compact table layouts.
-- No decorative icons in modal dialogs or dialog buttons.
-- XDG desktop entry and AppStream metadata.
-- Hicolor icon set from 16 to 256 px.
-- Optional `7z.so` external format/codec module.
-- Debian package and AppImage build recipes.
+- Aligned forms with right-aligned labels and consistent control heights.
+- Themed message, confirmation, overwrite and input dialogs across the app.
+- Modern progress, hash, options, benchmark and about dialogs.
+- Dark theme, monochrome toolbar icons and compact tables.
+- XDG desktop entry, AppStream metadata and hicolor icons (16–256 px).
+- Optional external codec/format module and Debian/AppImage build recipes.
 
-Windows-only features such as Explorer shell integration, NTFS alternate
-streams, drive letters, PE SFX and registry integration are intentionally not
-ported.
+Windows-only features such as Explorer integration, NTFS alternate streams,
+drive letters, PE SFX and registry integration are intentionally not ported.
+
+## Screenshots
+
+| Local files | Archive contents | Add to Archive |
+| :---: | :---: | :---: |
+| <img src="docs/screenshots/context-menu-local.png" width="270" alt="Local files context menu"> | <img src="docs/screenshots/context-menu-archive.png" width="270" alt="Archive context menu"> | <img src="docs/screenshots/compress-dialog.png" width="300" alt="Add to Archive dialog"> |
+
+More screenshots are in [`docs/screenshots`](docs/screenshots).
 
 ## Install
 
-Prebuilt release artifacts are published on the
+Prebuilt artifacts are on the
 [GitHub Releases page](https://github.com/ClaudiuJitea/7zipLX/releases).
-Building packages locally writes the same artifacts to `dist/`.
 
 ### Debian / Ubuntu
 
@@ -172,9 +117,8 @@ Building packages locally writes the same artifacts to `dist/`.
 sudo apt install ./dist/7ziplx_0.4.0-1_amd64.deb
 ```
 
-The package installs the application, shared engine, desktop entry, icons, man
-page, documentation and license notices. It targets the build host's
-distribution; the current artifact was built on Ubuntu 26.04 amd64.
+Installs the app, shared engine, desktop entry, icons, man page and notices.
+The package targets the build host's distribution (currently Ubuntu 26.04 amd64).
 
 ### AppImage
 
@@ -183,162 +127,111 @@ chmod +x dist/7zipLX-0.4.0-x86_64.AppImage
 ./dist/7zipLX-0.4.0-x86_64.AppImage
 ```
 
-The AppImage bundles Qt 6, `lib7zcore.so`, `7z.so`, the platform plugins and the
-application icon. It requires glibc 2.34 or newer.
-
-`dist/SHA256SUMS` contains checksums for both artifacts. The `dist/` directory
-is ignored by Git, so upload these files as GitHub Release assets rather than
-committing them.
+Bundles Qt 6, `lib7zcore.so`, `7z.so`, platform plugins and the app icon.
+Requires glibc 2.34 or newer. `dist/SHA256SUMS` contains both checksums; `dist/`
+is ignored by Git and is used for release assets.
 
 ## Build from source
 
-### Requirements
+Requirements: CMake 3.24+, Qt 6.5+ Widgets, a C++20 compiler, Ninja or Make,
+and `pthread`/`dl`. Building the optional external codec module also needs
+`patch`, `sed` and `make`; fetching 7-Zip needs `curl`/`wget` and `tar`.
 
-- CMake 3.24+
-- Qt 6.5+ Widgets (tested with Qt 6.10.2)
-- C++20 compiler (tested with GCC 15.2)
-- Ninja or Make
-- pthread, dl, `patch`, `sed`, and `make` when the external-codec module is enabled
-- `curl` or `wget`, and `tar`, to download the 7-Zip source
-
-The 7-Zip engine source is **not vendored**. Fetch the pinned 26.06 source once:
+The 7-Zip source is **not vendored**. Fetch the pinned 26.06 tree once:
 
 ```bash
 ./scripts/fetch-7zip.sh
 ```
 
-Then configure and build:
+Then build and run:
 
 ```bash
 cmake --preset release
 cmake --build --preset release -j"$(nproc)"
-```
-
-Run:
-
-```bash
 ./build-release/7ziplx
 ./build-release/7ziplx path/to/archive.7z
 ```
 
-The fetch script extracts into `7z2606-src/`, which is ignored by Git. To use an
-existing source tree instead, configure with
-`-DSEVENZIP_SOURCE_DIR=/path/to/7z2606-src`.
+The fetch script extracts to `7z2606-src/` (ignored by Git). Use an existing
+tree with `-DSEVENZIP_SOURCE_DIR=/path/to/7z2606-src`.
 
-### Build packages
+Build packages:
 
 ```bash
 ./scripts/build-deb.sh
 ./scripts/build-appimage.sh
 ```
 
-Artifacts are written to `dist/`. The AppImage build downloads linuxdeploy, its
-Qt plugin and appimagetool into the ignored `build-appimage/tools/` directory.
+Artifacts go to `dist/`. The AppImage build downloads linuxdeploy, its Qt plugin
+and appimagetool into the ignored `build-appimage/tools/`.
 
 ## Architecture
 
 ```
-Qt 6 Widgets UI
-  MainWindow, FilePanel, models, dialogs
+Qt 6 Widgets UI        MainWindow, FilePanel/FileView, models, dialogs
         │
-Application/backend adapter
-  ArchiveSession, CompressOperation, HashOperation,
-  ProgressState, PromptDispatcher, Unicode/PropVariant bridges
+Backend adapter        ArchiveSession, CompressOperation, ArchiveWriteBack,
+                       HashOperation, ProgressState, PromptDispatcher
         │
-Reused 7-Zip 26.06
-  C codecs, Archive, Compress, Crypto,
-  UI/Common, UI/Agent (POSIX-patched)
+Reused 7-Zip 26.06     codecs, Archive, Compress, Crypto, UI/Common, UI/Agent
         │
 POSIX subset of CPP/Windows
 ```
 
-- `7zcore` — shared library containing the reused 7-Zip translation units.
-- `7ziplx_backend` — static 7-Zip adapter and callback bridge.
+- `7zcore` — shared library with the reused 7-Zip translation units.
+- `7ziplx_backend` — 7-Zip adapter, operations, prompts and write-back logic.
 - `7ziplx_ui` — Qt Widgets UI, theme and resources.
 - `7ziplx` — application executable.
-- `7z.so` — optional external codec/format module loaded from the executable
-  directory.
+- `7z.so` — optional external codec/format module loaded next to the executable.
 
 Archive operations run in worker threads. Password and overwrite prompts are
-marshalled back to the GUI thread. The UI never calls 7-Zip directly.
+marshalled back to the GUI thread; the UI never calls 7-Zip directly.
 
 ## Keyboard shortcuts
 
 | Action | Shortcut |
 |---|---|
 | Open archive | `Ctrl+O` |
-| Extract | `Ctrl+E` |
-| Test archive | `Ctrl+T` |
+| Extract / test | `Ctrl+E` / `Ctrl+T` |
 | Add to archive | `Alt+A` |
 | Copy / move to other panel | `F5` / `F6` |
 | View / edit | `F3` / `F4` |
-| Rename | `F2` |
-| Delete | `Del` |
+| Rename / delete | `F2` / `Del` |
 | Create folder / file | `F7` / `Ctrl+N` |
 | Up one level | `Backspace` |
 | Switch active panel | `Tab` / `Shift+Tab` |
-| Edit path bar | `Ctrl+L` |
-| Invert selection | `Ctrl+I` |
-| Refresh | `Ctrl+R` |
-| Select all | `Ctrl+A` |
+| Focus path bar | `Ctrl+L` |
+| Select all / invert | `Ctrl+A` / `Ctrl+I` |
 | Cut / copy / paste | `Ctrl+X` / `Ctrl+C` / `Ctrl+V` |
-| Hash | `Ctrl+H` |
+| Refresh / hash | `Ctrl+R` / `Ctrl+H` |
 | Close archive | `Ctrl+W` |
 
 ## Known limitations
 
+- Nested-archive write-back is unavailable for split-volume containers
+  (`.001`, `.002`, …) and read-only outer formats; the app explains this before
+  editing.
+- Moving items *into* a nested archive is blocked; copy them instead.
+- Flat view cannot write back nested archives; switch to normal view first.
 - Translation catalogs are not bundled; the loader and language selector are
   ready for `7ziplx_<code>.qm` files.
-- Archive comment editing is limited to formats exposing
+- Archive comments are limited to formats exposing
   `IFolderOperations::SetProperty` (currently ZIP items).
-- Nested archive browsing and archive-to-archive transfers use temporary
-  extraction, so very large entries require temporary disk space.
-- Editing a nested archive writes the modified inner archive back to its parent.
-  This works for update-capable containers such as 7z, ZIP, TAR, GZip, BZip2 and
-  XZ, but is disabled for split-volume containers and read-only outer formats.
-- Moving items *into* a nested archive is not supported; copy them instead.
+- Nested browsing and archive-to-archive transfers use temporary disk space.
 - External editors open a temporary copy of archive items; edits are not written
   back automatically.
 - Third-party `7z.so` plugins must match the 7-Zip 26.06 ABI.
 - Very large local directories load synchronously.
 
-## Documentation
+## Documentation and license
 
 - [User guide](docs/USER-GUIDE.md)
 - [Build and packaging notes](docs/BUILD.md)
 - [Packaging recipes](packaging/README.md)
-- [Third-party notices](NOTICE.md)
-- [License texts](LICENSES/)
-
-## License
+- [Third-party notices](NOTICE.md) · [License texts](LICENSES/)
 
 7-Zip is primarily LGPL-2.1-or-later, with unRAR restrictions on RAR
-decompression code and BSD-licensed components. Qt 6 is available under
-LGPLv3/GPL/commercial terms.
-
-`7zcore` is built as a shared library to make LGPL relinking practical. Final
-distribution licensing and notices must be reviewed before release. See
-[`NOTICE.md`](NOTICE.md) and [`LICENSES/`](LICENSES/).
-
-## Project layout
-
-```
-.
-├── cmake/             # upstream preparation and source list
-├── src/
-│   ├── backend/       # 7-Zip adapter, callbacks, operations
-│   ├── models/        # local, root and archive models
-│   ├── ui/            # panels and dialogs
-│   ├── app/           # main window
-│   └── main.cpp
-├── patches/7zip/      # Linux compatibility patches
-├── resources/         # icons, Qt resources
-├── icon/              # original artwork and transparent icon master
-├── packaging/         # desktop entry, AppStream, Debian recipe, man page
-├── scripts/           # fetch, source-generation and packaging helpers
-└── docs/
-```
-
-The fetched 7-Zip source is placed at `7z2606-src/` and is not part of the
-repository. See [`docs/USER-GUIDE.md`](docs/USER-GUIDE.md) for usage and
-keyboard shortcuts.
+decompression and BSD-licensed components. Qt 6 is available under
+LGPLv3/GPL/commercial terms. `7zcore` is built as a shared library to make LGPL
+relinking practical. Review [`NOTICE.md`](NOTICE.md) and [`LICENSES/`](LICENSES/)
+before distribution.
