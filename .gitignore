@@ -1,0 +1,37 @@
+# Build artifacts and local state
+
+build/
+build-*/
+cmake-build-*/
+dist/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+.ninja_deps
+.ninja_log
+
+# Downloaded 7-Zip source (run ./scripts/fetch-7zip.sh)
+7z2606-src/
+
+# Qt
+*.moc
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+*.qm
+.qmake.stash
+
+# Runtime output
+Testing/
+*.log
+*.core
+core
+
+# Editors/tools
+.vscode/
+.idea/
+.cache/
+clangd/
+*.swp
+*~

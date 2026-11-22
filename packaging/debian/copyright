@@ -1,0 +1,28 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: 7zipLX
+Source: https://github.com/ClaudiuJitea/7zipLX
+
+Files: *
+Copyright: 2026 7zipLX contributors
+License: LGPL-2.1-or-later
+ This program is free software: you can redistribute it and/or modify it
+ under the terms of the GNU Lesser General Public License as published by
+ the Free Software Foundation, either version 2.1 of the License, or (at
+ your option) any later version.
+ .
+ This program is distributed in the hope that it will be useful, but
+ WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser
+ General Public License for more details.
+ .
+ On Debian systems the complete text is available at
+ /usr/share/common-licenses/LGPL-2.1.
+
+Files: usr/lib/*/lib7zcore.so
+Copyright: 1999-2026 Igor Pavlov
+License: LGPL-2.1-or-later
+ 7-Zip is primarily licensed under the GNU Lesser General Public License
+ version 2.1 or later. See /usr/share/doc/7ziplx/7zip-License.txt.
+ .
+ The RAR decompression code in this library is also subject to the unRAR
+ license restriction. See /usr/share/doc/7ziplx/7zip-unRarLicense.txt.

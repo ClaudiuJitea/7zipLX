@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.claudiujitea.7zipLX</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LGPL-2.1-or-later</project_license>
+  <name>7zipLX</name>
+  <url type="homepage">https://github.com/ClaudiuJitea/7zipLX</url>
+  <summary>Native Linux GUI for the 7-Zip archive engine</summary>
+  <developer id="io.github.claudiujitea">
+    <name>7zipLX contributors</name>
+  </developer>
+  <description>
+    <p>7zipLX is a Linux desktop archive manager built with Qt 6. It reuses the portable 7-Zip engine for archive formats, compression, extraction, testing and hashing.</p>
+    <p>It provides a two-panel file manager, archive browsing, encrypted archives, multi-volume archives and a native Linux user interface.</p>
+  </description>
+  <launchable type="desktop-id">7ziplx.desktop</launchable>
+  <provides>
+    <binary>7ziplx</binary>
+  </provides>
+  <categories>
+    <category>Utility</category>
+    <category>Archiving</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-11-22"/>
+  </releases>
+</component>

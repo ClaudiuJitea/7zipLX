@@ -1,0 +1,34 @@
+.TH 7ZIPLX 1 "2026-11-22" "7zipLX 0.1.0" "User Commands"
+.SH NAME
+7ziplx \- native Linux GUI for the 7-Zip archive engine
+.SH SYNOPSIS
+.B 7ziplx
+.RI [ archive ]
+.SH DESCRIPTION
+.B 7ziplx
+is a two-panel archive manager built with Qt 6. It uses the portable 7-Zip
+engine for archive formats, compression, extraction, testing, hashing and
+archive editing.
+.PP
+When
+.I archive
+is given, it is opened in the active panel after startup.
+.SH OPTIONS
+.TP
+.B \-\-help
+Show command-line help.
+.TP
+.B \-\-version
+Show the application version.
+.SH FILES
+.TP
+.I ~/.config/7zipLX/7zipLX.conf
+Persisted window, panel and tool settings.
+.TP
+.I /usr/share/7ziplx/translations
+Optional compiled Qt translation catalogs.
+.SH SEE ALSO
+.BR 7z (1),
+.BR 7zz (1)
+.SH AUTHOR
+7zipLX contributors.
