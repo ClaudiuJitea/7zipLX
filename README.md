@@ -102,6 +102,8 @@ MIME associations and language selection.
   Zstandard and the other formats compiled into the 7-Zip engine.
 - Browse folders inside archives with breadcrumb navigation.
 - Open archives nested inside other archives.
+- Edit nested archives; changes are written back to the parent container when the
+  outer format supports updating.
 - Flat view for showing nested items in one list.
 - Sort by name, size, packed size, modified time, attributes, CRC, method or
   encryption status.
@@ -167,7 +169,7 @@ Building packages locally writes the same artifacts to `dist/`.
 ### Debian / Ubuntu
 
 ```bash
-sudo apt install ./dist/7ziplx_0.3.0-1_amd64.deb
+sudo apt install ./dist/7ziplx_0.4.0-1_amd64.deb
 ```
 
 The package installs the application, shared engine, desktop entry, icons, man
@@ -177,8 +179,8 @@ distribution; the current artifact was built on Ubuntu 26.04 amd64.
 ### AppImage
 
 ```bash
-chmod +x dist/7zipLX-0.3.0-x86_64.AppImage
-./dist/7zipLX-0.3.0-x86_64.AppImage
+chmod +x dist/7zipLX-0.4.0-x86_64.AppImage
+./dist/7zipLX-0.4.0-x86_64.AppImage
 ```
 
 The AppImage bundles Qt 6, `lib7zcore.so`, `7z.so`, the platform plugins and the
@@ -291,9 +293,10 @@ marshalled back to the GUI thread. The UI never calls 7-Zip directly.
   `IFolderOperations::SetProperty` (currently ZIP items).
 - Nested archive browsing and archive-to-archive transfers use temporary
   extraction, so very large entries require temporary disk space.
-- Nested archives are read-only for editing: changes to the temporary inner
-  copy cannot be written back to the outer archive automatically. Extract the
-  inner archive first, then open it from disk to edit it.
+- Editing a nested archive writes the modified inner archive back to its parent.
+  This works for update-capable containers such as 7z, ZIP, TAR, GZip, BZip2 and
+  XZ, but is disabled for split-volume containers and read-only outer formats.
+- Moving items *into* a nested archive is not supported; copy them instead.
 - External editors open a temporary copy of archive items; edits are not written
   back automatically.
 - Third-party `7z.so` plugins must match the 7-Zip 26.06 ABI.

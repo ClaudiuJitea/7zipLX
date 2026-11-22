@@ -4,6 +4,7 @@
 #include "models/LocalFsModel.h"
 #include "models/ArchiveFolderModel.h"
 #include "models/RootModel.h"
+#include "backend/ArchiveWriteBack.h"
 #include "backend/ProgressState.h"
 #include "backend/PromptDispatcher.h"
 
@@ -637,6 +638,91 @@ bool FilePanel::enterArchivePath(const QString &relativePath)
 bool FilePanel::isArchive() const
 {
   return m_mode == ArchiveMode && m_archiveModel && m_archiveModel->isOpen();
+}
+
+bool FilePanel::canCommitNestedArchive(QString *reason) const
+{
+  if (!isNestedArchive())
+    return true;
+  if (m_flatMode)
+  {
+    if (reason)
+      *reason = QStringLiteral("Editing a nested archive is not supported in flat view. "
+                               "Switch to normal view, reopen the nested archive and try again.");
+    return false;
+  }
+  for (ArchiveFolderModel *model : m_archiveParents)
+  {
+    if (!model || !model->session())
+    {
+      if (reason) *reason = QStringLiteral("The parent archive is no longer open.");
+      return false;
+    }
+    const ArchiveSession *session = model->session();
+    if (!canReplaceArchiveEntry(session->archivePath(), session->relativePath(),
+                                session->formatName(), reason))
+      return false;
+  }
+  return true;
+}
+
+OperationResult FilePanel::commitNestedArchive(ProgressState *progress, PromptDispatcher *prompts)
+{
+  OperationResult result;
+  result.ok = true;
+  if (!isNestedArchive())
+    return result;
+  if (!m_archiveModel || !m_archiveModel->session())
+  {
+    result.ok = false;
+    result.error = QStringLiteral("The nested archive is no longer open.");
+    return result;
+  }
+
+  QString childFile = m_archiveModel->session()->archivePath();
+  for (int level = m_archiveParents.size() - 1; level >= 0; --level)
+  {
+    ArchiveFolderModel *parentModel = m_archiveParents.at(level);
+    if (!parentModel || !parentModel->session())
+    {
+      result.ok = false;
+      result.error = QStringLiteral("The parent archive is no longer open.");
+      return result;
+    }
+    ArchiveSession *parent = parentModel->session();
+    const QString parentFile = parent->archivePath();
+    OperationResult replaced = replaceArchiveEntry(parentFile, parent->relativePath(),
+                                                   childFile, parent->formatName(),
+                                                   parent->password(), progress, prompts);
+    if (!replaced.ok)
+      return replaced;
+    childFile = parentFile;
+  }
+  return result;
+}
+
+bool FilePanel::refreshNestedParents(ProgressState *progress, PromptDispatcher *prompts,
+                                     QString *error)
+{
+  for (ArchiveFolderModel *model : m_archiveParents)
+  {
+    if (!model || !model->session())
+      continue;
+    const QString path = model->session()->archivePath();
+    const QString formatHint = model->session()->formatName();
+    const QString password = model->session()->password();
+    const QString prefix = model->session()->relativePath();
+    QString err;
+    if (!model->open(path, formatHint, progress, prompts, &err, password))
+    {
+      if (error) *error = err;
+      return false;
+    }
+    if (!prefix.isEmpty())
+      model->session()->enterPath(prefix);
+    model->refresh();
+  }
+  return true;
 }
 
 bool FilePanel::reloadArchive(ProgressState *progress, PromptDispatcher *prompts, QString *error)

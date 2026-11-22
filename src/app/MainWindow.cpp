@@ -335,16 +335,37 @@ void MainWindow::focusOtherPanel()
 
 bool MainWindow::ensureWritableArchive(const QString &action)
 {
-  if (m_active && m_active->isArchive() && m_active->isNestedArchive())
+  if (!m_active || !m_active->isArchive() || !m_active->isNestedArchive())
+    return true;
+  QString reason;
+  if (m_active->canCommitNestedArchive(&reason))
+    return true;
+  m_prompts->showError(action + QStringLiteral(" not supported"), reason);
+  return false;
+}
+
+bool MainWindow::commitNestedArchive(FilePanel *panel)
+{
+  if (!panel || !panel->isNestedArchive())
+    return true;
+  const OperationResult result =
+      runOperation(QStringLiteral("Saving nested archive"),
+                   [panel](ProgressState *state, PromptDispatcher *prompts) {
+                     return panel->commitNestedArchive(state, prompts);
+                   });
+  if (!result.ok)
   {
-    m_prompts->showError(
-        action,
-        QStringLiteral("This is a nested archive opened from another archive.\n\n"
-                       "Only the temporary extracted copy could be changed, so editing is "
-                       "disabled. Extract the inner archive first, then open it from disk "
-                       "to edit it."));
+    if (!result.canceled && !result.error.isEmpty())
+      m_prompts->showError(QStringLiteral("Nested archive"), result.error);
     return false;
   }
+  QString error;
+  if (!panel->refreshNestedParents(nullptr, m_prompts, &error))
+  {
+    m_prompts->showError(QStringLiteral("Reload archive"), error);
+    return false;
+  }
+  m_status->setText(QStringLiteral("Saved nested archive changes"));
   return true;
 }
 
@@ -483,12 +504,20 @@ bool MainWindow::performTransfer(const PanelTransfer &transfer, FilePanel *targe
   {
     if (target->isNestedArchive())
     {
-      m_prompts->showError(
-          QStringLiteral("Edit nested archive"),
-          QStringLiteral("The destination is a nested archive opened from another archive.\n\n"
-                         "Changes cannot be written back to the outer archive, so adding items "
-                         "is disabled. Extract the inner archive first, then open it from disk."));
-      return false;
+      if (move)
+      {
+        m_prompts->showInfo(QStringLiteral("Nested archive"),
+                            QStringLiteral("Moving items into a nested archive is not supported because "
+                                           "the source would be removed before the outer archive is saved.\n\n"
+                                           "Copy the items instead (plain drag or Ctrl-drag)."));
+        return false;
+      }
+      QString reason;
+      if (!target->canCommitNestedArchive(&reason))
+      {
+        m_prompts->showError(QStringLiteral("Nested archive"), reason);
+        return false;
+      }
     }
     if (!targetSession)
     {
@@ -699,6 +728,10 @@ bool MainWindow::performTransfer(const PanelTransfer &transfer, FilePanel *targe
     return false;
   }
 
+  bool nestedSaved = true;
+  if (targetPath.archive && target->isNestedArchive())
+    nestedSaved = commitNestedArchive(target);
+
   if (targetPath.archive)
   {
     const QString prefix = targetPath.archivePrefix;
@@ -706,7 +739,7 @@ bool MainWindow::performTransfer(const PanelTransfer &transfer, FilePanel *targe
     if (!target->reloadArchive(nullptr, m_prompts, &error))
     {
       m_prompts->showError(QStringLiteral("Reload archive"), error);
-      return true;
+      return nestedSaved;
     }
     if (target->archiveRelativePath() != prefix && !prefix.isEmpty())
       target->enterArchivePath(prefix);
@@ -716,10 +749,13 @@ bool MainWindow::performTransfer(const PanelTransfer &transfer, FilePanel *targe
   if (move && source)
     source->refresh();
   updateActions();
-  m_status->setText(QStringLiteral("%1 %2 item(s)")
-                        .arg(move ? QStringLiteral("Moved") : QStringLiteral("Copied"))
-                        .arg(result.files ? result.files : transfer.count()));
-  return true;
+  if (!nestedSaved)
+    m_status->setText(QStringLiteral("Nested archive changes could not be saved"));
+  else
+    m_status->setText(QStringLiteral("%1 %2 item(s)")
+                          .arg(move ? QStringLiteral("Moved") : QStringLiteral("Copied"))
+                          .arg(result.files ? result.files : transfer.count()));
+  return nestedSaved;
 }
 
 void MainWindow::selectTransferredItems(FilePanel *target, const PanelDropTarget &targetPath,
@@ -1276,6 +1312,8 @@ void MainWindow::renameSelected()
                                      });
     if (!result.ok && !result.canceled)
       m_prompts->showError(QStringLiteral("Rename failed"), result.error);
+    if (result.ok && m_active->isNestedArchive())
+      commitNestedArchive(m_active);
     m_active->archiveModel()->refresh();
     updateActions();
     return;
@@ -1320,6 +1358,8 @@ void MainWindow::deleteSelected()
                                      });
     if (!result.ok && !result.canceled)
       m_prompts->showError(QStringLiteral("Delete failed"), result.error);
+    if (result.ok && m_active->isNestedArchive())
+      commitNestedArchive(m_active);
     m_active->archiveModel()->refresh();
     updateActions();
     return;
@@ -1408,6 +1448,8 @@ void MainWindow::createFolder()
                                      });
     if (!result.ok && !result.canceled)
       m_prompts->showError(QStringLiteral("Create Folder"), result.error);
+    if (result.ok && m_active->isNestedArchive())
+      commitNestedArchive(m_active);
     m_active->archiveModel()->refresh();
     updateActions();
     return;
@@ -1621,6 +1663,8 @@ void MainWindow::editComment()
     m_prompts->showError(QStringLiteral("Comment failed"), result.error);
   else if (result.ok)
   {
+    if (m_active->isNestedArchive())
+      commitNestedArchive(m_active);
     m_active->archiveModel()->refresh();
     m_status->setText(QStringLiteral("Comment saved"));
   }

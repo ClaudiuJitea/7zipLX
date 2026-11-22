@@ -18,7 +18,7 @@ int main(int argc, char **argv)
   QApplication::setApplicationDisplayName(QStringLiteral("7zipLX"));
   QApplication::setOrganizationName(QStringLiteral("7zipLX"));
   QApplication::setOrganizationDomain(QStringLiteral("7ziplx.local"));
-  QApplication::setApplicationVersion(QStringLiteral("0.3.0"));
+  QApplication::setApplicationVersion(QStringLiteral("0.4.0"));
   Theme::apply(app);
   QApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/7ziplx-256.png")));
 

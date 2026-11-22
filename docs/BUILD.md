@@ -92,14 +92,14 @@ Debian package:
 
 ```bash
 ./scripts/build-deb.sh
-# dist/7ziplx_0.3.0-1_amd64.deb
+# dist/7ziplx_0.4.0-1_amd64.deb
 ```
 
 AppImage:
 
 ```bash
 ./scripts/build-appimage.sh
-# dist/7zipLX-0.3.0-x86_64.AppImage
+# dist/7zipLX-0.4.0-x86_64.AppImage
 ```
 
 Both scripts fetch the 7-Zip source if needed and reuse `build-release`. Set

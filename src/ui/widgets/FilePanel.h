@@ -63,6 +63,9 @@ public:
   bool isArchive() const;
   bool isNestedArchive() const { return !m_archiveParents.isEmpty(); }
   bool reloadArchive(ProgressState *progress, PromptDispatcher *prompts, QString *error);
+  bool canCommitNestedArchive(QString *reason) const;
+  OperationResult commitNestedArchive(ProgressState *progress, PromptDispatcher *prompts);
+  bool refreshNestedParents(ProgressState *progress, PromptDispatcher *prompts, QString *error);
   QString localPath() const;
   QString displayPath() const;
 

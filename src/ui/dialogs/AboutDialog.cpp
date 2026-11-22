@@ -23,7 +23,7 @@ AboutDialog::AboutDialog(QWidget *parent) : QDialog(parent)
   sub->setWordWrap(true);
   layout->addWidget(sub);
 
-  auto *version = new QLabel(QStringLiteral("Version 0.3.0 · Qt %1 · 7-Zip 26.06").arg(QString::fromLatin1(qVersion())), this);
+  auto *version = new QLabel(QStringLiteral("Version 0.4.0 · Qt %1 · 7-Zip 26.06").arg(QString::fromLatin1(qVersion())), this);
   version->setObjectName(QStringLiteral("dialogSubheading"));
   layout->addWidget(version);
 
