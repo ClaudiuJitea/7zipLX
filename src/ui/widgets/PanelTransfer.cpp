@@ -10,6 +10,12 @@
 namespace {
 constexpr quint32 kFormatVersion = 1;
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+constexpr QDataStream::Version kStreamVersion = QDataStream::Qt_6_5;
+#else
+constexpr QDataStream::Version kStreamVersion = QDataStream::Qt_6_4;
+#endif
+
 QString normalizedArchivePrefix(const QString &prefix)
 {
   QString p = prefix;
@@ -42,7 +48,7 @@ QByteArray PanelTransfer::encode() const
 {
   QByteArray data;
   QDataStream out(&data, QIODevice::WriteOnly);
-  out.setVersion(QDataStream::Qt_6_5);
+  out.setVersion(kStreamVersion);
   out << kFormatVersion
       << quint8(kind)
       << qint32(sourcePanelId)
@@ -62,7 +68,7 @@ PanelTransfer PanelTransfer::decode(const QByteArray &data)
   if (data.isEmpty())
     return transfer;
   QDataStream in(data);
-  in.setVersion(QDataStream::Qt_6_5);
+  in.setVersion(kStreamVersion);
   quint32 version = 0;
   quint8 kind = 0;
   qint32 panelId = -1;
