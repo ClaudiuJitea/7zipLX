@@ -117,7 +117,7 @@ void buildDemoTree(const QString &root)
     copyFile(source + QLatin1Char('/') + relative, root + QLatin1Char('/') + relative);
 
   writeFile(root + QStringLiteral("/CHANGELOG.md"),
-            "# 7zipLX 0.5.1\n\n"
+            "# 7zipLX 0.5.2\n\n"
             "- single-pane first, two panels on F9\n"
             "- external-edit write-back for archive items\n"
             "- streamed archive hashing\n"
@@ -130,16 +130,16 @@ void buildDemoTree(const QString &root)
   const QString downloads = root + QStringLiteral("/Downloads");
   QDir().mkpath(downloads);
   writeFile(downloads + QStringLiteral("/release-notes.md"),
-            "# 7zipLX 0.5.1\n\n"
+            "# 7zipLX 0.5.2\n\n"
             "Single-pane first. F9 adds a second pane.\n"
             "F4 edits are written back to the archive.\n");
   writeFile(downloads + QStringLiteral("/SHA256SUMS"),
             "6a076f2d6c4a9ddf6e0b2a4c8e6f5d3c  "
-            "7zipLX-0.5.1-x86_64.AppImage\n"
+            "7zipLX-0.5.2-x86_64.AppImage\n"
             "a3f3d2c2b1e0f9a8c7b6a5d4e3f2a1b0  "
-            "7ziplx_0.5.1-1_amd64.deb\n");
-  writeFile(downloads + QStringLiteral("/7ziplx_0.5.1-1_amd64.deb"), "demo package\n");
-  writeFile(downloads + QStringLiteral("/7zipLX-0.5.1-x86_64.AppImage"), "demo appimage\n");
+            "7ziplx_0.5.2-1_amd64.deb\n");
+  writeFile(downloads + QStringLiteral("/7ziplx_0.5.2-1_amd64.deb"), "demo package\n");
+  writeFile(downloads + QStringLiteral("/7zipLX-0.5.2-x86_64.AppImage"), "demo appimage\n");
   QDir().mkpath(downloads + QStringLiteral("/screenshots"));
   writeFile(downloads + QStringLiteral("/screenshots/hero.png"), "demo screenshot\n");
 }
@@ -152,7 +152,7 @@ int main(int argc, char **argv)
   QApplication::setApplicationName(QStringLiteral("7zipLX"));
   QApplication::setApplicationDisplayName(QStringLiteral("7zipLX"));
   QApplication::setOrganizationName(QStringLiteral("7zipLX"));
-  QApplication::setApplicationVersion(QStringLiteral("0.5.1"));
+  QApplication::setApplicationVersion(QStringLiteral("0.5.2"));
 
   const QString outputDir = argc > 1 ? QString::fromLocal8Bit(argv[1])
                                      : QStringLiteral("docs/screenshots");
@@ -163,7 +163,7 @@ int main(int argc, char **argv)
   const QString work = QStringLiteral("/tmp/7ziplx-demo");
   QDir(work).removeRecursively();
   QDir().mkpath(work);
-  const QString demoRoot = work + QStringLiteral("/7ziplx-0.5.1");
+  const QString demoRoot = work + QStringLiteral("/7ziplx-0.5.2");
   buildDemoTree(demoRoot);
 
   QString engineError;
@@ -174,7 +174,7 @@ int main(int argc, char **argv)
   }
 
   PromptDispatcher prompts;
-  const QString archivePath = work + QStringLiteral("/7ziplx-0.5.1.7z");
+  const QString archivePath = work + QStringLiteral("/7ziplx-0.5.2.7z");
   CompressOptions options;
   options.archivePath = archivePath;
   options.formatIndex = SevenZipEngine::instance().formatIndex(QStringLiteral("7z"));
@@ -197,7 +197,7 @@ int main(int argc, char **argv)
     qCritical("demo archive: %s", qPrintable(created.error));
     return 1;
   }
-  copyFile(archivePath, demoRoot + QStringLiteral("/Downloads/7ziplx-0.5.1.7z"));
+  copyFile(archivePath, demoRoot + QStringLiteral("/Downloads/7ziplx-0.5.2.7z"));
 
   MainWindow window;
   window.resize(1180, 760);
@@ -281,7 +281,7 @@ int main(int argc, char **argv)
     {
       if (edit->text().endsWith(QStringLiteral(".7z")))
       {
-        edit->setText(work + QStringLiteral("/7ziplx-0.5.1.7z"));
+        edit->setText(work + QStringLiteral("/7ziplx-0.5.2.7z"));
         break;
       }
     }
@@ -329,7 +329,7 @@ int main(int argc, char **argv)
     dialog.setKind(MessageDialog::Kind::Question);
     dialog.setHeading(QStringLiteral("Update archive?"));
     dialog.setText(QStringLiteral("<b>Theme.cpp</b> was modified in an external editor.<br><br>"
-                                 "Update it in <b>7ziplx-0.5.1.7z</b>?"),
+                                 "Update it in <b>7ziplx-0.5.2.7z</b>?"),
                    true);
     auto *update = dialog.addButton(QStringLiteral("Update Archive"),
                                     QDialogButtonBox::AcceptRole);
@@ -344,7 +344,7 @@ int main(int argc, char **argv)
   {
     ProgressState state;
     state.setTitle(QStringLiteral("Updating archive"));
-    state.setStatus(QStringLiteral("Writing 7ziplx-0.5.1.7z"));
+    state.setStatus(QStringLiteral("Writing 7ziplx-0.5.2.7z"));
     state.setCurrentFile(QStringLiteral("src/ui/Theme.cpp"));
     state.setTotals(4823449, 12);
     state.setCompleted(3111628, 8);

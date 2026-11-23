@@ -35,7 +35,7 @@ AppStream reports only informational notices for the number-prefixed component n
 ./scripts/build-deb.sh
 ```
 
-The package is written to `dist/7ziplx_0.5.1-1_amd64.deb` by default. It
+The package is written to `dist/7ziplx_0.5.2-1_amd64.deb` by default. It
 contains the executable, `lib7zcore.so`, the optional `7z.so` engine module,
 desktop entry, AppStream metadata, hicolor icons, man page, documentation and
 7-Zip/unRAR notices. The script generates `Depends` with `dpkg-shlibdeps`,
@@ -51,7 +51,7 @@ needed.
 ./scripts/build-appimage.sh
 ```
 
-The AppImage is written to `dist/7zipLX-0.5.1-x86_64.AppImage` by default. It
+The AppImage is written to `dist/7zipLX-0.5.2-x86_64.AppImage` by default. It
 bundles the release binary, `lib7zcore.so`, `7z.so` and the required Qt 6
 libraries/plugins. Build tools are downloaded into `build-appimage/tools/` on
 first use.

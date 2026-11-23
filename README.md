@@ -12,7 +12,7 @@
   <img alt="Platform: Linux" src="https://img.shields.io/badge/platform-Linux-2ea44f?logo=linux&logoColor=white">
   <img alt="Qt 6.4+" src="https://img.shields.io/badge/Qt-6.4%2B-41cd52?logo=qt&logoColor=white">
   <img alt="7-Zip 26.06" src="https://img.shields.io/badge/engine-7--Zip%2026.06-cc0000">
-  <img alt="Version 0.5.1" src="https://img.shields.io/badge/version-0.5.1-blue">
+  <img alt="Version 0.5.2" src="https://img.shields.io/badge/version-0.5.2-blue">
 </p>
 
 ![7zipLX 0.5 with an archive open in single-pane mode](docs/screenshots/hero.png)
@@ -71,11 +71,11 @@ Prebuilt assets are on the
 
 ```bash
 # Debian / Ubuntu
-sudo apt install ./7ziplx_0.5.1-1_amd64.deb
+sudo apt install ./7ziplx_0.5.2-1_amd64.deb
 
 # AppImage
-chmod +x 7zipLX-0.5.1-x86_64.AppImage
-./7zipLX-0.5.1-x86_64.AppImage
+chmod +x 7zipLX-0.5.2-x86_64.AppImage
+./7zipLX-0.5.2-x86_64.AppImage
 ```
 
 Python 3 and `python3-pil` are only needed to regenerate the README images.

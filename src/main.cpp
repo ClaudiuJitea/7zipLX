@@ -9,6 +9,7 @@
 #include "app/OperationRunner.h"
 
 #include <QApplication>
+#include <QGuiApplication>
 #include <QCommandLineParser>
 #include <QSettings>
 #include <QLibraryInfo>
@@ -24,10 +25,12 @@ int main(int argc, char **argv)
   QApplication::setApplicationDisplayName(QStringLiteral("7zipLX"));
   QApplication::setOrganizationName(QStringLiteral("7zipLX"));
   QApplication::setOrganizationDomain(QStringLiteral("7ziplx.local"));
-  QApplication::setApplicationVersion(QStringLiteral("0.5.1"));
+  QApplication::setApplicationVersion(QStringLiteral("0.5.2"));
+  QGuiApplication::setDesktopFileName(QStringLiteral("7ziplx"));
   Theme::apply(app, Theme::modeFromString(
       QSettings().value(QStringLiteral("ui/theme"), QStringLiteral("system")).toString()));
-  QApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/7ziplx-256.png")));
+  QApplication::setWindowIcon(QIcon::fromTheme(
+      QStringLiteral("7ziplx"), QIcon(QStringLiteral(":/icons/7ziplx-256.png"))));
 
   QString language = QSettings().value(QStringLiteral("ui/language"), QStringLiteral("system")).toString();
   if (language == QLatin1String("system"))
