@@ -23,6 +23,11 @@
   </categories>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.5.1" date="2026-11-23">
+      <description>
+        <p>Fix Debian/Ubuntu package dependencies across the t64 Qt package transition, so the same .deb installs on Ubuntu 24.04 and 26.04.</p>
+      </description>
+    </release>
     <release version="0.5.0" date="2026-11-23">
       <description>
         <p>Single-pane first workflow, external-edit write-back, streamed archive hashing, background folder scanning, system/light/dark themes, CLI modes, file-manager actions, assembly optimizations, tests and CI.</p>

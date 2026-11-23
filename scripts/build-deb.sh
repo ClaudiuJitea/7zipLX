@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="${VERSION:-0.5.0}"
+VERSION="${VERSION:-0.5.1}"
 REVISION="${REVISION:-1}"
 ARCH="${ARCH:-$(dpkg --print-architecture)}"
 MULTIARCH="${MULTIARCH:-$(dpkg-architecture -qDEB_HOST_MULTIARCH)}"
@@ -83,7 +83,31 @@ if command -v dpkg-shlibdeps >/dev/null 2>&1; then
   set -e
 fi
 if [[ -z "$DEPENDS" ]]; then
-  DEPENDS="libc6, libgcc-s1, libstdc++6, libqt6core6t64 | libqt6core6, libqt6gui6, libqt6widgets6"
+  DEPENDS="libc6, libgcc-s1, libstdc++6, "
+  DEPENDS+="libqt6core6t64 (>= 6.4.0) | libqt6core6 (>= 6.4.0), "
+  DEPENDS+="libqt6gui6t64 (>= 6.4.0) | libqt6gui6 (>= 6.4.0), "
+  DEPENDS+="libqt6widgets6t64 (>= 6.3.0) | libqt6widgets6 (>= 6.3.0)"
+fi
+
+# Ubuntu 24.04 uses the t64 Qt package names while 26.04 uses the plain names.
+# Emit both alternatives so one .deb works on either release.
+if [[ -n "$DEPENDS" ]] && command -v python3 >/dev/null 2>&1; then
+  DEPENDS="$(python3 - "$DEPENDS" <<'PYEOF'
+import re
+import sys
+
+result = []
+for dep in sys.argv[1].split(','):
+    dep = dep.strip()
+    match = re.fullmatch(r'(libqt6(?:core|gui|widgets)6)(?:t64)?( \(>= [^)]+\))?', dep)
+    if match:
+        base, version = match.group(1), match.group(2) or ''
+        result.append(f"{base}t64{version} | {base}{version}")
+    elif dep:
+        result.append(dep)
+print(', '.join(result))
+PYEOF
+)"
 fi
 
 INSTALLED_SIZE="$(du -sk "$STAGE/usr" | awk '{print $1}')"
