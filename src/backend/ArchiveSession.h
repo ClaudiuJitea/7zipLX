@@ -98,6 +98,15 @@ public:
                           ProgressState *progress,
                           PromptDispatcher *prompts);
 
+  // Hash selected items without extracting them to disk.  The archive engine
+  // streams each item through the hashers in memory; only the progress and
+  // password prompts touch the UI.
+  OperationResult hashItems(const QVector<int> &selectedIndices,
+                            const QStringList &methods,
+                            QStringList *lines,
+                            ProgressState *progress,
+                            PromptDispatcher *prompts);
+
   OperationResult deleteItems(const QVector<int> &selectedIndices,
                               ProgressState *progress,
                               PromptDispatcher *prompts = nullptr);

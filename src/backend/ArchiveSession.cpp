@@ -19,6 +19,7 @@
 #include "7zip/PropID.h"
 #include "7zip/Common/FileStreams.h"
 #include "7zip/UI/Common/ArchiveOpenCallback.h"
+#include "7zip/UI/Common/HashCalc.h"
 #include "7zip/UI/Common/IFileExtractCallback.h"
 #include "7zip/UI/Agent/Agent.h"
 #include "7zip/UI/Agent/IFolderArchive.h"
@@ -267,6 +268,174 @@ Z7_COM7F_IMF(ExtractBridge::ReportExtractResult(
 }
 
 Z7_COM7F_IMF(ExtractBridge::CryptoGetTextPassword(BSTR *password))
+{
+  if (!m_passwordDefined)
+  {
+    if (!m_prompts)
+      return E_ABORT;
+    QString pw;
+    bool ok = false;
+    m_prompts->askPassword(&pw, &ok, QStringLiteral("Password required"));
+    if (!ok)
+      return E_ABORT;
+    m_password = q2u(pw);
+    m_passwordDefined = true;
+  }
+  return StringToBstr(m_password, password);
+}
+
+// Streams archive item data straight into the CHashBundle.  This avoids the
+// extract-to-disk-then-read-back cycle used by the old archive hash path.
+class HashOutStream final : public ISequentialOutStream, public CMyUnknownImp
+{
+public:
+  Z7_COM_UNKNOWN_IMP_0
+  Z7_IFACE_COM7_IMP(ISequentialOutStream)
+
+public:
+  explicit HashOutStream(CHashBundle *bundle) : m_bundle(bundle) {}
+
+private:
+  CHashBundle *m_bundle = nullptr;
+};
+
+Z7_COM7F_IMF(HashOutStream::Write(const void *data, UInt32 size, UInt32 *processedSize))
+{
+  if (m_bundle)
+    m_bundle->Update(data, size);
+  if (processedSize)
+    *processedSize = size;
+  return S_OK;
+}
+
+class HashExtractBridge final
+    : public IArchiveExtractCallback,
+      public ICryptoGetTextPassword,
+      public CMyUnknownImp
+{
+public:
+  Z7_COM_QI_BEGIN2(IArchiveExtractCallback)
+    Z7_COM_QI_ENTRY(ICryptoGetTextPassword)
+  Z7_COM_QI_END
+  Z7_COM_ADDREF_RELEASE
+
+  Z7_IFACE_COM7_IMP(IProgress)
+  Z7_IFACE_COM7_IMP(IArchiveExtractCallback)
+  Z7_IFACE_COM7_IMP(ICryptoGetTextPassword)
+
+public:
+  HashExtractBridge(ProgressState *progress, PromptDispatcher *prompts, const QString &password)
+      : m_progress(progress), m_prompts(prompts)
+  {
+    if (!password.isEmpty())
+    {
+      m_password = q2u(password);
+      m_passwordDefined = true;
+    }
+  }
+
+  void setItems(const QHash<UInt32, UString> &paths, const QHash<UInt32, bool> &dirs)
+  {
+    m_paths = paths;
+    m_dirs = dirs;
+  }
+
+  CHashBundle bundle;
+  const CHashBundle &hashBundle() const { return bundle; }
+  quint64 filesDone() const { return m_filesDone; }
+  QStringList messages() const { return m_messages; }
+
+private:
+  ProgressState *m_progress = nullptr;
+  PromptDispatcher *m_prompts = nullptr;
+  UString m_password;
+  bool m_passwordDefined = false;
+  QHash<UInt32, UString> m_paths;
+  QHash<UInt32, bool> m_dirs;
+  UString m_currentPath;
+  bool m_currentIsDir = false;
+  bool m_currentValid = false;
+  quint64 m_filesDone = 0;
+  QStringList m_messages;
+
+  HRESULT checkBreak() const
+  {
+    return (m_progress && m_progress->isCanceled()) ? E_ABORT : S_OK;
+  }
+};
+
+Z7_COM7F_IMF(HashExtractBridge::SetTotal(UInt64 size))
+{
+  if (m_progress)
+    m_progress->setTotals(size);
+  return checkBreak();
+}
+
+Z7_COM7F_IMF(HashExtractBridge::SetCompleted(const UInt64 *completeValue))
+{
+  if (m_progress && completeValue)
+    m_progress->setCompleted(*completeValue);
+  return checkBreak();
+}
+
+Z7_COM7F_IMF(HashExtractBridge::GetStream(UInt32 index, ISequentialOutStream **outStream,
+                                          Int32 askExtractMode))
+{
+  if (!outStream)
+    return E_INVALIDARG;
+  *outStream = nullptr;
+  if (checkBreak() != S_OK)
+    return E_ABORT;
+  if (askExtractMode != NArchive::NExtract::NAskMode::kExtract)
+    return S_OK;
+
+  m_currentPath.Empty();
+  const auto pathIt = m_paths.constFind(index);
+  if (pathIt != m_paths.constEnd())
+    m_currentPath = pathIt.value();
+  m_currentIsDir = m_dirs.value(index, false);
+  m_currentValid = true;
+
+  if (m_progress)
+    m_progress->setCurrentFile(u2q(m_currentPath));
+  if (m_currentIsDir)
+    return checkBreak();
+
+  bundle.InitForNewFile();
+  CMyComPtr<ISequentialOutStream> stream = new HashOutStream(&bundle);
+  *outStream = stream.Detach();
+  return S_OK;
+}
+
+Z7_COM7F_IMF(HashExtractBridge::PrepareOperation(Int32 /*askExtractMode*/))
+{
+  return checkBreak();
+}
+
+Z7_COM7F_IMF(HashExtractBridge::SetOperationResult(Int32 opRes))
+{
+  if (!m_currentValid)
+    return checkBreak();
+  if (opRes == NArchive::NExtract::NOperationResult::kOK)
+  {
+    bundle.Final(m_currentIsDir, false, m_currentPath);
+    ++m_filesDone;
+  }
+  else
+  {
+    bundle.NumErrors++;
+    const QString s = QStringLiteral("Error reading: %1").arg(u2q(m_currentPath));
+    m_messages.append(s);
+    if (m_progress)
+      m_progress->addMessage(s);
+  }
+  m_currentValid = false;
+  if (m_progress)
+    m_progress->setCompleted(0, m_filesDone);
+  return checkBreak();
+}
+
+Z7_COM7F_IMF(HashExtractBridge::CryptoGetTextPassword(BSTR *password))
 {
   if (!m_passwordDefined)
   {
@@ -850,6 +1019,191 @@ OperationResult ArchiveSession::extract(const QVector<int> &selectedIndices,
   else if (res != S_OK)
   {
     result.error = QStringLiteral("Extraction failed (%1)").arg(hrText(res));
+  }
+  else
+  {
+    result.ok = true;
+  }
+
+  if (progress)
+  {
+    progress->setStatus(result.canceled ? QStringLiteral("Canceled")
+                                        : (result.ok ? QStringLiteral("Finished") : QStringLiteral("Failed")));
+    for (const QString &m : result.messages)
+      progress->addMessage(m);
+  }
+  return result;
+}
+
+OperationResult ArchiveSession::hashItems(const QVector<int> &selectedIndices,
+                                         const QStringList &methods,
+                                         QStringList *lines,
+                                         ProgressState *progress,
+                                         PromptDispatcher *prompts)
+{
+  OperationResult result;
+  if (lines)
+    lines->clear();
+  if (!d->open || !d->current || !d->agentSpec)
+  {
+    result.error = QStringLiteral("No archive is open");
+    return result;
+  }
+  IInArchive *archive = d->agentSpec->GetArchive();
+  if (!archive)
+  {
+    result.error = QStringLiteral("The archive engine is not available");
+    return result;
+  }
+
+  CUIntVector selected;
+  if (selectedIndices.isEmpty())
+  {
+    const int n = itemCount();
+    selected.Reserve(n);
+    for (int i = 0; i < n; ++i)
+      selected.Add(UInt32(i));
+  }
+  else
+  {
+    selected.Reserve(selectedIndices.size());
+    for (int i : selectedIndices)
+      if (i >= 0 && i < itemCount())
+        selected.Add(UInt32(i));
+  }
+  if (selected.IsEmpty())
+  {
+    result.error = QStringLiteral("No items selected");
+    return result;
+  }
+
+  CUIntVector realIndices;
+  CAgentFolder *folder = static_cast<CAgentFolder *>(d->current.Interface());
+  folder->GetRealIndices(selected.ConstData(), selected.Size(), false, false, realIndices);
+  if (realIndices.IsEmpty())
+  {
+    result.error = QStringLiteral("No items selected");
+    return result;
+  }
+
+  if (progress)
+  {
+    progress->setTitle(QStringLiteral("Hashing archive items"));
+    progress->setStatus(QStringLiteral("Preparing..."));
+  }
+
+  HashExtractBridge *bridgeSpec = new HashExtractBridge(progress, prompts, password());
+  CMyComPtr<IArchiveExtractCallback> bridge = bridgeSpec;
+
+  QHash<UInt32, UString> paths;
+  QHash<UInt32, bool> dirs;
+  UInt64 totalSize = 0;
+  for (unsigned i = 0; i < realIndices.Size(); ++i)
+  {
+    const UInt32 index = realIndices[i];
+    UString path;
+    NCOM::CPropVariant prop;
+    if (archive->GetProperty(index, kpidPath, &prop) == S_OK)
+    {
+      if (prop.vt == VT_BSTR)
+        path = prop.bstrVal;
+      else if (prop.vt == VT_EMPTY)
+        prop.Clear();
+    }
+    if (path.IsEmpty())
+    {
+      NCOM::CPropVariant name;
+      if (archive->GetProperty(index, kpidName, &name) == S_OK && name.vt == VT_BSTR)
+        path = name.bstrVal;
+    }
+    paths.insert(index, path);
+
+    NCOM::CPropVariant isDirProp;
+    const bool isDir = archive->GetProperty(index, kpidIsDir, &isDirProp) == S_OK &&
+                       isDirProp.vt == VT_BOOL && isDirProp.boolVal != VARIANT_FALSE;
+    dirs.insert(index, isDir);
+    if (!isDir)
+    {
+      NCOM::CPropVariant sizeProp;
+      if (archive->GetProperty(index, kpidSize, &sizeProp) == S_OK && sizeProp.vt == VT_UI8)
+        totalSize += sizeProp.uhVal.QuadPart;
+    }
+  }
+  bridgeSpec->setItems(paths, dirs);
+  if (progress)
+    progress->setTotals(totalSize, realIndices.Size());
+
+  UStringVector methodNames;
+  if (methods.isEmpty())
+    methodNames.Add(UString("SHA256"));
+  else
+    for (const QString &method : methods)
+      methodNames.Add(q2u(method));
+
+  HRESULT methodResult;
+#ifdef Z7_EXTERNAL_CODECS
+  methodResult = bridgeSpec->bundle.SetMethods(SevenZipEngine::instance().externalCodecs(), methodNames);
+#else
+  methodResult = bridgeSpec->bundle.SetMethods(methodNames);
+#endif
+  if (methodResult != S_OK)
+  {
+    result.error = QStringLiteral("Unsupported hash method");
+    return result;
+  }
+
+  HRESULT res = E_FAIL;
+  try
+  {
+    res = archive->Extract(realIndices.ConstData(), realIndices.Size(), 0, bridge);
+  }
+  catch (const UString &s)
+  {
+    result.error = u2q(s);
+  }
+  catch (const std::exception &e)
+  {
+    result.error = QString::fromUtf8(e.what());
+  }
+  catch (...)
+  {
+    result.error = QStringLiteral("Unknown error while hashing");
+  }
+
+  result.messages = bridgeSpec->messages();
+  result.files = bridgeSpec->bundle.NumFiles;
+  result.unpackedSize = bridgeSpec->bundle.FilesSize;
+  if (lines)
+  {
+    const CHashBundle &bundle = bridgeSpec->hashBundle();
+    for (unsigned i = 0; i < bundle.Hashers.Size(); ++i)
+    {
+      const CHasherState &h = bundle.Hashers[i];
+      char buf[k_HashCalc_DigestSize_Max * 2 + 1];
+      h.WriteToString(k_HashCalc_Index_DataSum, buf);
+      lines->append(QStringLiteral("%1: %2").arg(QString::fromUtf8(h.Name.Ptr()), QString::fromLatin1(buf)));
+      if (bundle.NumFiles + bundle.NumDirs > 1)
+      {
+        h.WriteToString(k_HashCalc_Index_NamesSum, buf);
+        lines->append(QStringLiteral("%1(names): %2").arg(QString::fromUtf8(h.Name.Ptr()), QString::fromLatin1(buf)));
+      }
+    }
+    if (bundle.NumErrors != 0)
+      lines->append(QStringLiteral("Errors: %1").arg(bundle.NumErrors));
+    for (const QString &message : bridgeSpec->messages())
+      lines->append(message);
+    result.details = *lines;
+  }
+
+  if (res == E_ABORT)
+  {
+    result.canceled = true;
+    result.error = QStringLiteral("Operation canceled");
+  }
+  else if (res != S_OK)
+  {
+    if (result.error.isEmpty())
+      result.error = QStringLiteral("Hashing failed (%1)").arg(hrText(res));
   }
   else
   {

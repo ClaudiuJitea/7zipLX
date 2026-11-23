@@ -1,0 +1,152 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QT_VERSION: "6.5"
+
+jobs:
+  asan-tests:
+    name: ASan + UBSan tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake ninja-build pkg-config \
+            qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev \
+            patch sed make
+
+      - name: Cache pinned 7-Zip source
+        id: cache-7zip
+        uses: actions/cache@v4
+        with:
+          path: 7z2606-src
+          key: 7zip-26.06-${{ runner.os }}
+
+      - name: Fetch pinned 7-Zip 26.06
+        if: steps.cache-7zip.outputs.cache-hit != 'true'
+        run: ./scripts/fetch-7zip.sh
+
+      - name: Configure
+        run: cmake --preset debug-asan
+
+      - name: Build
+        run: cmake --build --preset debug-asan -j"$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build-asan --output-on-failure
+
+  asm-tests:
+    name: Assembly release tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake ninja-build pkg-config \
+            qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev \
+            patch sed make
+
+      - name: Build asmc (MASM-compatible assembler)
+        run: |
+          git clone --depth 1 https://github.com/nidud/asmc_linux asmc-src
+          make -C asmc-src -j"$(nproc)"
+          echo "ASMC=$PWD/asmc-src/asmc" >> "$GITHUB_ENV"
+
+      - name: Cache pinned 7-Zip source
+        id: cache-7zip
+        uses: actions/cache@v4
+        with:
+          path: 7z2606-src
+          key: 7zip-26.06-${{ runner.os }}
+
+      - name: Fetch pinned 7-Zip 26.06
+        if: steps.cache-7zip.outputs.cache-hit != 'true'
+        run: ./scripts/fetch-7zip.sh
+
+      - name: Configure with assembly
+        run: |
+          cmake --preset release-asm \
+            -DSEVENZIP_ASM_COMPILER="$ASMC"
+
+      - name: Build
+        run: cmake --build --preset release-asm -j"$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build-release-asm --output-on-failure
+
+  packages:
+    name: Release packages
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [asan-tests, asm-tests]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake ninja-build pkg-config \
+            qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev \
+            patch sed make \
+            dpkg-dev fakeroot zlib1g-dev desktop-file-utils \
+            libxkbcommon-x11-0 libxcb-cursor0
+
+      - name: Build asmc (MASM-compatible assembler)
+        run: |
+          git clone --depth 1 https://github.com/nidud/asmc_linux asmc-src
+          make -C asmc-src -j"$(nproc)"
+          echo "ASMC=$PWD/asmc-src/asmc" >> "$GITHUB_ENV"
+
+      - name: Fetch pinned 7-Zip 26.06
+        run: ./scripts/fetch-7zip.sh
+
+      - name: Build .deb
+        env:
+          VERSION: ${{ github.ref_name }}
+          SEVENZIP_BUILD_ASM: "ON"
+        run: |
+          export VERSION="${VERSION#v}"
+          export SEVENZIP_ASM_COMPILER="$ASMC"
+          ./scripts/build-deb.sh
+
+      - name: Build AppImage
+        env:
+          VERSION: ${{ github.ref_name }}
+          SEVENZIP_BUILD_ASM: "ON"
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          export VERSION="${VERSION#v}"
+          export SEVENZIP_ASM_COMPILER="$ASMC"
+          ./scripts/build-appimage.sh
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum *.deb *.AppImage > SHA256SUMS
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.deb
+            dist/*.AppImage
+            dist/SHA256SUMS

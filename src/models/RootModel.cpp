@@ -11,7 +11,7 @@ void RootModel::refresh()
   beginResetModel();
   m_items.clear();
   Item home;
-  home.name = QStringLiteral("Home");
+  home.name = RootModel::tr("Home");
   home.path = QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
   home.fs = QStringLiteral("home");
   home.root = false;
@@ -79,11 +79,11 @@ QVariant RootModel::headerData(int section, Qt::Orientation orientation, int rol
   if (orientation != Qt::Horizontal || role != Qt::DisplayRole) return QVariant();
   switch (section)
   {
-    case ColumnName: return QStringLiteral("Name");
-    case ColumnMount: return QStringLiteral("Mount point");
-    case ColumnFs: return QStringLiteral("Filesystem");
-    case ColumnTotal: return QStringLiteral("Total");
-    case ColumnFree: return QStringLiteral("Free");
+    case ColumnName: return RootModel::tr("Name");
+    case ColumnMount: return RootModel::tr("Mount point");
+    case ColumnFs: return RootModel::tr("Filesystem");
+    case ColumnTotal: return RootModel::tr("Total");
+    case ColumnFree: return RootModel::tr("Free");
     default: return QVariant();
   }
 }

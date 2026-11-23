@@ -3,17 +3,17 @@
 ## Requirements
 
 - CMake 3.24+
-- Qt 6.5+ Widgets (tested with 6.10.2)
+- Qt 6.4+ Widgets (tested with 6.10.2)
 - C++20 compiler (tested with GCC 15.2)
 - Ninja or Make
 - pthread, dl, `patch`, `sed`, and `make` when the optional `7z.so` plugin is enabled
+- `asmc`, `jwasm` or `uasm` for `SEVENZIP_BUILD_ASM=ON` (Debian/Ubuntu: `asmc-linux`
+  where available; otherwise build https://github.com/nidud/asmc_linux)
 - `curl` or `wget`, and `tar`, to download the 7-Zip engine source
 
-The build is validated on Ubuntu 26.04 x86_64 with:
-
-- Qt 6.10.2
-- GCC 15.2
-- CMake 4.4.2
+The build is validated locally on Ubuntu 26.04 x86_64 with Qt 6.10.2, GCC
+15.2 and CMake 4.4.2. CI uses Ubuntu 24.04 with its Qt 6.4 packages, which is
+also the minimum supported Qt version.
 
 ## Fetch the 7-Zip source
 
@@ -46,6 +46,19 @@ By default `SEVENZIP_EXTERNAL_CODECS=ON` builds `7z.so` from
 executable. Disable it with `-DSEVENZIP_EXTERNAL_CODECS=OFF` to build only the
 static built-in codecs.
 
+Assembly optimizations are optional:
+
+```bash
+cmake -S . -B build-asm -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DSEVENZIP_BUILD_ASM=ON \
+  -DSEVENZIP_ASM_COMPILER="$(command -v asmc)"
+cmake --build build-asm -j"$(nproc)"
+```
+
+This assembles 7zCrcOpt, XzCrc64Opt, SHA-1/SHA-256, Sort, AES, LzFindOpt and
+LzmaDecOpt. The CMake option replaces the corresponding portable C translation
+units (and defines `Z7_LZMA_DEC_OPT` for the LZMA decoder). It is x86-64 only.
+
 At configure time, `cmake/PrepareUpstream.cmake`:
 
 1. copies the fetched `7z2606-src/` to `build/upstream/`;
@@ -68,6 +81,41 @@ For a headless environment:
 QT_QPA_PLATFORM=offscreen ./build/7ziplx path/to/archive.7z
 ```
 
+CLI modes:
+
+```bash
+./build/7ziplx --extract-here path/to/archive.7z
+./build/7ziplx --extract-to /tmp/out path/to/archive.zip
+./build/7ziplx --compress file-or-folder
+./build/7ziplx --compress-to /tmp/out.7z file1 file2
+```
+
+## Tests and sanitizers
+
+CTest is enabled by default (`BUILD_TESTING=ON`). The suite creates archives,
+edits nested and single-file archives, exercises password/overwrite/cancel
+paths with a fake `PromptDispatcher`, verifies streaming hashes and checks that
+`../`, absolute and symlink tar entries cannot escape the extraction directory.
+
+```bash
+cmake --build build -j"$(nproc)"
+ctest --test-dir build --output-on-failure
+```
+
+The `debug-asan` preset builds with AddressSanitizer and UndefinedBehaviorSanitizer
+(alignment checks are disabled because upstream 7-Zip intentionally performs
+unaligned loads/stores):
+
+```bash
+cmake --preset debug-asan
+cmake --build --preset debug-asan -j"$(nproc)"
+ctest --test-dir build-asan --output-on-failure
+```
+
+CI (`.github/workflows/ci.yml`) runs the sanitizer suite, builds the x86-64
+assembly configuration with `asmc`, and on `v*` tags builds/uploads the `.deb`
+and AppImage.
+
 ## Install
 
 ```bash
@@ -78,8 +126,10 @@ Installs:
 
 - `bin/7ziplx`
 - `lib/<multiarch>/lib7zcore.so`
-- desktop entry and AppStream metadata
+- desktop entry, AppStream metadata and desktop actions
 - hicolor icons at 16–256 px
+- Nemo actions, KDE/Dolphin service menu, Nautilus scripts, the
+  file-manager action installer and the translation updater
 - man page, README, user guide and license notices
 
 The executable uses an install RPATH relative to its library directory.
@@ -92,23 +142,34 @@ Debian package:
 
 ```bash
 ./scripts/build-deb.sh
-# dist/7ziplx_0.4.0-1_amd64.deb
+# dist/7ziplx_0.5.0-1_amd64.deb
 ```
 
 AppImage:
 
 ```bash
 ./scripts/build-appimage.sh
-# dist/7zipLX-0.4.0-x86_64.AppImage
+# dist/7zipLX-0.5.0-x86_64.AppImage
 ```
 
 Both scripts fetch the 7-Zip source if needed and reuse `build-release`. Set
 `VERSION`, `REVISION`, `ARCH`, `OUT` or `BUILD_DIR` as needed. The AppImage script
 downloads linuxdeploy, its Qt plugin and appimagetool into `build-appimage/tools/`.
 
-The `.deb` target follows the build host's distribution (Ubuntu 26.04 amd64 in
-the current validation environment). The AppImage bundles Qt and requires glibc
-2.34 or newer from the host.
+The `.deb` target follows the build host's distribution (Ubuntu 24.04 amd64 in
+CI; Ubuntu 26.04 in the current local validation environment). The AppImage bundles Qt and requires glibc
+2.34 or newer from the host. Both scripts pass `SEVENZIP_BUILD_ASM=ON` and
+`SEVENZIP_ASM_COMPILER` through to CMake when set; the release workflow builds
+with assembly enabled.
+
+Flatpak:
+
+```bash
+flatpak-builder --user --install --force-clean build-flatpak \
+  packaging/flatpak/io.github.claudiujitea.7zipLX.yml
+```
+
+See `packaging/flatpak/README.md`.
 
 The `.deb` uses a multiarch library directory and installs
 `/usr/share/doc/7ziplx`, a man page and Debian maintainer scripts for desktop and
@@ -121,7 +182,9 @@ appimagetool with AppStream validation disabled until the project homepage exist
 - `7ziplx_backend` — static adapter/callback library
 - `7ziplx_ui` — static Qt Widgets library
 - `7ziplx` — application
+- `7ziplx_tests` — QtTest suite (when `BUILD_TESTING` and Qt6 Test are present)
 - `7z.so` — optional external codec/format module (built by the `7zplugin` target)
+- `7zasm` — custom target that assembles the optimized routines
 
 ### Why `7zcore` is shared
 

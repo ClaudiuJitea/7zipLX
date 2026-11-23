@@ -20,20 +20,20 @@
 CompressDialog::CompressDialog(const QStringList &files, const QString &defaultDir, QWidget *parent)
     : QDialog(parent), m_files(files)
 {
-  setWindowTitle(QStringLiteral("Add to Archive"));
+  setWindowTitle(CompressDialog::tr("Add to Archive"));
   setWindowIcon(QIcon());
   setMinimumWidth(580);
 
   auto *layout = new QVBoxLayout(this);
   layout->setContentsMargins(24, 22, 24, 18);
   layout->setSpacing(12);
-  auto *heading = new QLabel(QStringLiteral("Add to Archive"), this);
+  auto *heading = new QLabel(CompressDialog::tr("Add to Archive"), this);
   heading->setObjectName(QStringLiteral("dialogHeading"));
   layout->addWidget(heading);
-  auto *sub = new QLabel(QStringLiteral("Create a new archive or update an existing one."), this);
+  auto *sub = new QLabel(CompressDialog::tr("Create a new archive or update an existing one."), this);
   sub->setObjectName(QStringLiteral("dialogSubheading"));
   layout->addWidget(sub);
-  auto *info = new QLabel(QStringLiteral("%1 item(s) selected").arg(files.size()), this);
+  auto *info = new QLabel(CompressDialog::tr("%1 item(s) selected").arg(files.size()), this);
   info->setObjectName(QStringLiteral("dialogInfo"));
   info->setWordWrap(true);
   layout->addWidget(info);
@@ -44,10 +44,10 @@ CompressDialog::CompressDialog(const QStringList &files, const QString &defaultD
   pathRow->setContentsMargins(0, 0, 0, 0);
   pathRow->setSpacing(8);
   m_archivePath = new QLineEdit(this);
-  auto *browseButton = new QPushButton(QStringLiteral("Browse..."), this);
+  auto *browseButton = new QPushButton(CompressDialog::tr("Browse..."), this);
   pathRow->addWidget(m_archivePath, 1);
   pathRow->addWidget(browseButton);
-  form->addRow(QStringLiteral("Archive:"), pathRow);
+  form->addRow(CompressDialog::tr("Archive:"), pathRow);
 
   m_format = new QComboBox(this);
   const auto formats = SevenZipEngine::instance().updateFormats();
@@ -55,7 +55,7 @@ CompressDialog::CompressDialog(const QStringList &files, const QString &defaultD
   {
     const int idx = SevenZipEngine::instance().formatIndex(name);
     const QString ext = SevenZipEngine::instance().formatExtension(idx);
-    m_format->addItem(ext.isEmpty() ? name : QStringLiteral("%1 (*.%2)").arg(name, ext), idx);
+    m_format->addItem(ext.isEmpty() ? name : CompressDialog::tr("%1 (*.%2)").arg(name, ext), idx);
   }
   const int def = SevenZipEngine::instance().formatIndex(QStringLiteral("7z"));
   if (def >= 0)
@@ -63,43 +63,43 @@ CompressDialog::CompressDialog(const QStringList &files, const QString &defaultD
     const int pos = m_format->findData(def);
     if (pos >= 0) m_format->setCurrentIndex(pos);
   }
-  form->addRow(QStringLiteral("Format:"), m_format);
+  form->addRow(CompressDialog::tr("Format:"), m_format);
 
   m_level = new QComboBox(this);
-  m_level->addItem(QStringLiteral("Store (0)"), 0);
+  m_level->addItem(CompressDialog::tr("Store (0)"), 0);
   for (int i = 1; i <= 9; ++i)
-    m_level->addItem(QStringLiteral("Level %1").arg(i), i);
+    m_level->addItem(CompressDialog::tr("Level %1").arg(i), i);
   m_level->setCurrentIndex(5);
-  form->addRow(QStringLiteral("Compression level:"), m_level);
+  form->addRow(CompressDialog::tr("Compression level:"), m_level);
 
   m_method = new QLineEdit(this);
   m_method->setPlaceholderText(QStringLiteral("format default"));
-  form->addRow(QStringLiteral("Method:"), m_method);
+  form->addRow(CompressDialog::tr("Method:"), m_method);
 
   m_dictionary = new QLineEdit(this);
-  m_dictionary->setPlaceholderText(QStringLiteral("e.g. 16m, 64m; empty = default"));
-  form->addRow(QStringLiteral("Dictionary:"), m_dictionary);
+  m_dictionary->setPlaceholderText(CompressDialog::tr("e.g. 16m, 64m; empty = default"));
+  form->addRow(CompressDialog::tr("Dictionary:"), m_dictionary);
 
-  m_solid = new QCheckBox(QStringLiteral("Solid block"), this);
+  m_solid = new QCheckBox(CompressDialog::tr("Solid block"), this);
   form->addRow(QString(), m_solid);
 
   m_threads = new QSpinBox(this);
   m_threads->setRange(0, 256);
-  m_threads->setSpecialValueText(QStringLiteral("Auto"));
-  form->addRow(QStringLiteral("Threads:"), m_threads);
+  m_threads->setSpecialValueText(CompressDialog::tr("Auto"));
+  form->addRow(CompressDialog::tr("Threads:"), m_threads);
 
   m_volume = new QComboBox(this);
-  m_volume->addItem(QStringLiteral("Single file"), quint64(0));
+  m_volume->addItem(CompressDialog::tr("Single file"), quint64(0));
   m_volume->addItem(QStringLiteral("1 MiB"), quint64(1) << 20);
   m_volume->addItem(QStringLiteral("10 MiB"), quint64(10) << 20);
   m_volume->addItem(QStringLiteral("100 MiB"), quint64(100) << 20);
   m_volume->addItem(QStringLiteral("1 GiB"), quint64(1) << 30);
-  form->addRow(QStringLiteral("Split volumes:"), m_volume);
+  form->addRow(CompressDialog::tr("Split volumes:"), m_volume);
 
   m_password = new QLineEdit(this);
   m_password->setEchoMode(QLineEdit::Password);
-  form->addRow(QStringLiteral("Password:"), m_password);
-  m_encryptHeaders = new QCheckBox(QStringLiteral("Encrypt file names (7z)"), this);
+  form->addRow(CompressDialog::tr("Password:"), m_password);
+  m_encryptHeaders = new QCheckBox(CompressDialog::tr("Encrypt file names (7z)"), this);
   form->addRow(QString(), m_encryptHeaders);
 
   layout->addLayout(form);
@@ -120,7 +120,7 @@ CompressDialog::CompressDialog(const QStringList &files, const QString &defaultD
 
 void CompressDialog::browse()
 {
-  const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("Save archive"), m_archivePath->text());
+  const QString path = QFileDialog::getSaveFileName(this, CompressDialog::tr("Save archive"), m_archivePath->text());
   if (!path.isEmpty())
   {
     m_archivePath->setText(path);

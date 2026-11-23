@@ -7,7 +7,9 @@
 7ziplx /path/to/archive.7z
 ```
 
-The window has two panels. The focused panel is the target for toolbar and menu actions.
+The window starts with one panel. `View > Two Panels` (`F9`) shows the second
+panel; the focused panel is the target for toolbar and menu actions. Launching
+with an archive argument always opens in single-pane mode.
 
 ## Panels
 
@@ -16,13 +18,17 @@ The window has two panels. The focused panel is the target for toolbar and menu 
 - Double-click an archive file to browse it.
 - `Backspace` goes up one level; at an archive root, close the archive with `Ctrl+W`.
 - `View > Computer` shows mounted filesystems and the home folder.
+- `View > Two Panels` (`F9`) toggles the second pane. The choice is remembered
+  with the window geometry and panel paths.
+- Large local folders are scanned off the GUI thread and filled into the list in
+  batches; the status line shows `Loading...` until the scan finishes.
 - `View > Show Hidden Files` and `View > Show Parent Entry (..)` control local lists.
 
 ## Right-click menus
 
 Right-click any panel item for a 7-Zip File Manager-style context menu. The local-files menu includes the **7-Zip** submenu (open/extract/test an archive, add files to an archive, or create a `.7z`/`.zip` beside the selection), Open Inside variants, View/Edit, file operations, CRC/hash methods, split/combine, properties and link creation. The archive panel menu adds extraction and testing, comment editing, archive-item hashing and folder creation. Use **Select All** / **Invert Selection** to act on several items at once.
 
-Screenshots: [`context-menu-local.png`](screenshots/context-menu-local.png) and [`context-menu-archive.png`](screenshots/context-menu-archive.png).
+Screenshots: [`two-panes.png`](screenshots/two-panes.png), [`workflows.png`](screenshots/workflows.png) and [`writeback.png`](screenshots/writeback.png).
 
 ## Archives
 
@@ -35,8 +41,9 @@ Screenshots: [`context-menu-local.png`](screenshots/context-menu-local.png) and 
 - Drop onto a folder row to copy into that folder. In an archive, dropping onto
   a folder row adds the items inside that archive folder.
 - Plain drag or `Ctrl` copies; `Shift` moves.
-- `F5` / `F6` copy or move between the two panels. `Tab` / `Shift+Tab` switch the
-  active panel.
+- `F5` / `F6` copy or move to the second panel. In single-pane mode the second
+  pane is revealed first; if both panes point at the same folder, 7zipLX asks
+  for a destination folder. `Tab` / `Shift+Tab` switch the active panel.
 - `F2` renames; `Del` deletes; `F7` creates a folder; `Ctrl+N` creates a file.
 - `Alt+Enter` shows basic properties.
 - `File > Create Link...` creates a symbolic or hard link for a selected local file.
@@ -83,8 +90,10 @@ With two archive panels open, `F5`/`F6` or drag and drop copy or move selected i
 ## Comments, diff, viewer and editor
 
 - `File > Comment...` edits a ZIP item comment.
-- `File > View` (`F3`) and `File > Edit` (`F4`) launch configured external tools; archive items are extracted to a private temporary directory first.
-- `File > Diff` compares exactly two selected local files or archive items with the configured diff command.
+- `File > View` (`F3`) and `File > Edit` (`F4`) launch configured external tools; archive items are extracted to a private temporary directory first. The extraction uses the normal progress dialog and can be canceled.
+- `F4` copies are watched. When the editor saves, 7zipLX asks **Update archive?**. Choose **Update Archive** to write the change back (nested archives are rebuilt bottom-up), **Keep Changes** to retry later with `File > Update Archive from Edited File(s)`, or **Discard** to delete the copy.
+- View and drag copies are capped at 512 MiB by default (`tools/externalTempLimitMiB`); idle view copies are removed after 30 minutes (`tools/externalTempMaxAgeMinutes`). Edited copies stay until write-back or discard.
+- `File > Diff` compares exactly two selected local files or archive items with the configured diff command. Diff runs asynchronously and can be canceled by closing it/the timeout; the GUI is not blocked.
 - Configure commands under `Tools > Options > Tools`.
 
 ## Benchmark
@@ -93,7 +102,7 @@ With two archive panels open, `F5`/`F6` or drag and drop copy or move selected i
 
 ## Hashing
 
-`Tools > Hash...` (`Ctrl+H`) computes a hash for selected local files. Choose the method in the prompt and copy the result from the dialog.
+`Tools > Hash...` (`Ctrl+H`) computes a hash for selected local files or archive items. Archive items are hashed by streaming decoded data through the 7-Zip hashers, without writing a temporary copy. Choose the method in the prompt and copy the result from the dialog.
 
 ## Split / combine
 
@@ -102,22 +111,22 @@ With two archive panels open, `F5`/`F6` or drag and drop copy or move selected i
 
 ## Theme
 
-The application uses a dark desktop theme with rounded panels, menus and dialogs. Modal message boxes and dialog button boxes intentionally use no decorative icons.
+The application follows the system light/dark preference by default and also offers explicit Light and Dark choices in `Tools > Options > Appearance`. Modal message boxes and dialog button boxes intentionally use no decorative icons.
 
 ## Options
 
 `Tools > Options` contains:
 
-- **General** — hidden files, parent row, grid and flat view.
+- **General** — hidden files, parent row, grid, flat view and theme.
 - **Tools** — viewer, editor and diff command lines.
 - **Plugins** — status of the optional `7z.so` external codec/format module.
 - **Associations** — request default handlers through `xdg-mime`.
-- **Language** — select an installed `7ziplx_<code>.qm` translation; restart after changing it.
+- **Language** — select an installed `7ziplx_<code>.qm` translation; restart after changing it. User-facing strings are wrapped in `tr()`; run `scripts/update-translations.sh` to generate catalogs.
 
 ## Favorites and settings
 
 - `Favorites > Add Current Folder` stores the active local folder.
-- The window size, splitter position, last panel paths and view options are saved automatically.
+- The window size, splitter position, single/two-pane choice, last panel paths and view options are saved automatically.
 - Use `File > Exit` or `Ctrl+Q` to quit.
 
 ## Keyboard reference
@@ -129,6 +138,7 @@ The application uses a dark desktop theme with rounded panels, menus and dialogs
 | Test | `Ctrl+T` |
 | Add to archive | `Alt+A` |
 | Copy/move to other panel | `F5` / `F6` |
+| Show/hide second panel | `F9` |
 | Rename | `F2` |
 | Delete | `Del` |
 | Create folder | `F7` |
@@ -147,5 +157,26 @@ The application uses a dark desktop theme with rounded panels, menus and dialogs
 
 - If the window does not start, run from a terminal and check the Qt platform plugin messages.
 - For headless sessions, use `QT_QPA_PLATFORM=offscreen`.
-- Large directories load synchronously in the current MVP; allow a moment for very large folders.
+- Very large folders are scanned in the background, but the list is still filled in batches; the first rows appear as soon as the scan completes.
 - If archive editing fails on an encrypted archive, close and reopen it with the password first; full encrypted-archive editing support is a future milestone.
+
+## Command line and desktop integration
+
+```bash
+7ziplx --extract-here archive.7z
+7ziplx --extract-to /path/to/output archive.zip
+7ziplx --compress file-or-folder
+7ziplx --compress-to output.7z file1 file2
+```
+
+These modes show the normal progress dialog, can prompt for passwords and
+overwrites, and exit without opening the main window. They are used by the
+optional file-manager actions:
+
+```bash
+./scripts/install-file-manager-actions.sh
+```
+
+This installs a Dolphin/KDE service menu, Nemo actions, Nautilus scripts and
+(per-user) Thunar custom actions, or use the system packages. A Flatpak manifest
+is available under `packaging/flatpak/`.

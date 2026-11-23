@@ -23,6 +23,11 @@
   </categories>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.5.0" date="2026-11-23">
+      <description>
+        <p>Single-pane first workflow, external-edit write-back, streamed archive hashing, background folder scanning, system/light/dark themes, CLI modes, file-manager actions, assembly optimizations, tests and CI.</p>
+      </description>
+    </release>
     <release version="0.4.0" date="2026-11-22">
       <description>
         <p>Nested archive editing now writes the modified inner archive back to its parent archive recursively. Supports update-capable 7z, ZIP, TAR and single-file compressor containers, with clear preflight errors for split-volume and read-only outer formats.</p>

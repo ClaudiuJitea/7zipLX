@@ -17,17 +17,17 @@
 
 ExtractDialog::ExtractDialog(QWidget *parent) : QDialog(parent)
 {
-  setWindowTitle(QStringLiteral("Extract"));
+  setWindowTitle(ExtractDialog::tr("Extract"));
   setWindowIcon(QIcon());
   setMinimumWidth(560);
 
   auto *layout = new QVBoxLayout(this);
   layout->setContentsMargins(24, 22, 24, 18);
   layout->setSpacing(12);
-  auto *heading = new QLabel(QStringLiteral("Extract Archive"), this);
+  auto *heading = new QLabel(ExtractDialog::tr("Extract Archive"), this);
   heading->setObjectName(QStringLiteral("dialogHeading"));
   layout->addWidget(heading);
-  auto *sub = new QLabel(QStringLiteral("Choose a destination and extraction options."), this);
+  auto *sub = new QLabel(ExtractDialog::tr("Choose a destination and extraction options."), this);
   sub->setObjectName(QStringLiteral("dialogSubheading"));
   layout->addWidget(sub);
   auto *info = new QLabel(this);
@@ -43,30 +43,30 @@ ExtractDialog::ExtractDialog(QWidget *parent) : QDialog(parent)
   dirRow->setSpacing(8);
   m_dir = new QLineEdit(this);
   m_dir->setText(QStandardPaths::writableLocation(QStandardPaths::HomeLocation));
-  auto *browseButton = new QPushButton(QStringLiteral("Browse..."), this);
+  auto *browseButton = new QPushButton(ExtractDialog::tr("Browse..."), this);
   dirRow->addWidget(m_dir, 1);
   dirRow->addWidget(browseButton);
-  form->addRow(QStringLiteral("Extract to:"), dirRow);
+  form->addRow(ExtractDialog::tr("Extract to:"), dirRow);
 
   m_pathMode = new QComboBox(this);
-  m_pathMode->addItem(QStringLiteral("Full paths"), 0);
-  m_pathMode->addItem(QStringLiteral("Current folder paths"), 1);
-  m_pathMode->addItem(QStringLiteral("No paths"), 2);
-  m_pathMode->addItem(QStringLiteral("Absolute paths"), 3);
-  form->addRow(QStringLiteral("Path mode:"), m_pathMode);
+  m_pathMode->addItem(ExtractDialog::tr("Full paths"), 0);
+  m_pathMode->addItem(ExtractDialog::tr("Current folder paths"), 1);
+  m_pathMode->addItem(ExtractDialog::tr("No paths"), 2);
+  m_pathMode->addItem(ExtractDialog::tr("Absolute paths"), 3);
+  form->addRow(ExtractDialog::tr("Path mode:"), m_pathMode);
 
   m_overwrite = new QComboBox(this);
-  m_overwrite->addItem(QStringLiteral("Ask before overwrite"), 0);
-  m_overwrite->addItem(QStringLiteral("Overwrite"), 1);
-  m_overwrite->addItem(QStringLiteral("Skip existing"), 2);
-  m_overwrite->addItem(QStringLiteral("Auto rename"), 3);
-  m_overwrite->addItem(QStringLiteral("Rename existing"), 4);
-  form->addRow(QStringLiteral("Overwrite:"), m_overwrite);
+  m_overwrite->addItem(ExtractDialog::tr("Ask before overwrite"), 0);
+  m_overwrite->addItem(ExtractDialog::tr("Overwrite"), 1);
+  m_overwrite->addItem(ExtractDialog::tr("Skip existing"), 2);
+  m_overwrite->addItem(ExtractDialog::tr("Auto rename"), 3);
+  m_overwrite->addItem(ExtractDialog::tr("Rename existing"), 4);
+  form->addRow(ExtractDialog::tr("Overwrite:"), m_overwrite);
 
   m_password = new QLineEdit(this);
   m_password->setEchoMode(QLineEdit::Password);
-  form->addRow(QStringLiteral("Password:"), m_password);
-  m_showPassword = new QCheckBox(QStringLiteral("Show password"), this);
+  form->addRow(ExtractDialog::tr("Password:"), m_password);
+  m_showPassword = new QCheckBox(ExtractDialog::tr("Show password"), this);
   form->addRow(QString(), m_showPassword);
   layout->addLayout(form);
 
@@ -82,7 +82,7 @@ ExtractDialog::ExtractDialog(QWidget *parent) : QDialog(parent)
 void ExtractDialog::setArchivePath(const QString &path)
 {
   m_archivePath = path;
-  setWindowTitle(path.isEmpty() ? QStringLiteral("Extract") : QStringLiteral("Extract - %1").arg(QFileInfo(path).fileName()));
+  setWindowTitle(path.isEmpty() ? ExtractDialog::tr("Extract") : ExtractDialog::tr("Extract - %1").arg(QFileInfo(path).fileName()));
   if (auto *label = findChild<QLabel *>(QStringLiteral("dialogInfo")))
   {
     label->setText(path);
@@ -98,7 +98,7 @@ void ExtractDialog::setDefaultOutputDir(const QString &dir)
 
 void ExtractDialog::browse()
 {
-  const QString dir = QFileDialog::getExistingDirectory(this, QStringLiteral("Select output folder"), m_dir->text());
+  const QString dir = QFileDialog::getExistingDirectory(this, ExtractDialog::tr("Select output folder"), m_dir->text());
   if (!dir.isEmpty())
     m_dir->setText(dir);
 }

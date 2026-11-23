@@ -12,7 +12,7 @@ class OptionsDialog : public QDialog
 public:
   OptionsDialog(bool showHidden, bool showDots, bool showGrid, bool flatView,
                 const QString &viewer, const QString &editor, const QString &diff,
-                const QString &language, QWidget *parent = nullptr);
+                const QString &language, const QString &theme, QWidget *parent = nullptr);
   bool showHidden() const;
   bool showDots() const;
   bool showGrid() const;
@@ -21,6 +21,7 @@ public:
   QString editorCommand() const;
   QString diffCommand() const;
   QString language() const;
+  QString theme() const;
 
 private slots:
   void setDefaultAssociation();
@@ -35,4 +36,5 @@ private:
   QLineEdit *m_editor = nullptr;
   QLineEdit *m_diff = nullptr;
   QComboBox *m_language = nullptr;
+  QComboBox *m_theme = nullptr;
 };

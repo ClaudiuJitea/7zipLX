@@ -13,17 +13,17 @@
 
 BenchmarkDialog::BenchmarkDialog(QWidget *parent) : QDialog(parent)
 {
-  setWindowTitle(QStringLiteral("Benchmark"));
+  setWindowTitle(BenchmarkDialog::tr("Benchmark"));
   setWindowIcon(QIcon());
   setMinimumSize(640, 500);
 
   auto *layout = new QVBoxLayout(this);
   layout->setContentsMargins(24, 22, 24, 18);
   layout->setSpacing(12);
-  auto *heading = new QLabel(QStringLiteral("Benchmark"), this);
+  auto *heading = new QLabel(BenchmarkDialog::tr("Benchmark"), this);
   heading->setObjectName(QStringLiteral("dialogHeading"));
   layout->addWidget(heading);
-  auto *sub = new QLabel(QStringLiteral("Measure 7-Zip compression and decompression speed for a method and dictionary size."), this);
+  auto *sub = new QLabel(BenchmarkDialog::tr("Measure 7-Zip compression and decompression speed for a method and dictionary size."), this);
   sub->setObjectName(QStringLiteral("dialogSubheading"));
   sub->setWordWrap(true);
   layout->addWidget(sub);
@@ -32,7 +32,7 @@ BenchmarkDialog::BenchmarkDialog(QWidget *parent) : QDialog(parent)
   configureDialogForm(form);
   m_method = new QComboBox(this);
   m_method->addItems({QStringLiteral("LZMA2"), QStringLiteral("LZMA")});
-  form->addRow(QStringLiteral("Method:"), m_method);
+  form->addRow(BenchmarkDialog::tr("Method:"), m_method);
   m_dictionary = new QComboBox(this);
   const struct { const char *label; quint64 value; } dicts[] = {
       {"1 MiB", 1ULL << 20}, {"4 MiB", 4ULL << 20}, {"16 MiB", 16ULL << 20},
@@ -40,30 +40,30 @@ BenchmarkDialog::BenchmarkDialog(QWidget *parent) : QDialog(parent)
   for (const auto &d : dicts)
     m_dictionary->addItem(QString::fromLatin1(d.label), QVariant::fromValue<qulonglong>(d.value));
   m_dictionary->setCurrentIndex(2);
-  form->addRow(QStringLiteral("Dictionary:"), m_dictionary);
+  form->addRow(BenchmarkDialog::tr("Dictionary:"), m_dictionary);
   m_threads = new QSpinBox(this);
   m_threads->setRange(1, 256);
   m_threads->setValue(1);
-  form->addRow(QStringLiteral("Threads:"), m_threads);
+  form->addRow(BenchmarkDialog::tr("Threads:"), m_threads);
   m_iterations = new QSpinBox(this);
   m_iterations->setRange(1, 20);
   m_iterations->setValue(1);
-  form->addRow(QStringLiteral("Iterations:"), m_iterations);
+  form->addRow(BenchmarkDialog::tr("Iterations:"), m_iterations);
   layout->addLayout(form);
 
   m_log = new QPlainTextEdit(this);
   m_log->setReadOnly(true);
-  m_log->setPlaceholderText(QStringLiteral("Benchmark output will appear here."));
+  m_log->setPlaceholderText(BenchmarkDialog::tr("Benchmark output will appear here."));
   layout->addWidget(m_log, 1);
 
   auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
-  m_run = buttons->addButton(QStringLiteral("Run Benchmark"), QDialogButtonBox::ActionRole);
+  m_run = buttons->addButton(BenchmarkDialog::tr("Run Benchmark"), QDialogButtonBox::ActionRole);
   m_run->setDefault(true);
   layout->addWidget(buttons);
   connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
   connect(m_run, &QPushButton::clicked, this, [this] {
     setRunning(true);
-    m_log->setPlainText(QStringLiteral("Running benchmark..."));
+    m_log->setPlainText(BenchmarkDialog::tr("Running benchmark..."));
     emit runRequested();
   });
 }

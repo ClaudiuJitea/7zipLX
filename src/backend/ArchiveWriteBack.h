@@ -1,11 +1,30 @@
 #pragma once
 
 #include <QString>
+#include <QVector>
 
 #include "backend/ArchiveSession.h"
 
 class ProgressState;
 class PromptDispatcher;
+
+// One archive in the parent chain of an externally edited item.  Steps are
+// ordered from the archive that contains the edited file outwards to the
+// outermost archive on disk.
+struct ArchiveWriteBackStep
+{
+  QString archivePath;
+  QString subdir;
+  QString formatName;
+  QString password;
+
+  bool operator==(const ArchiveWriteBackStep &other) const
+  {
+    return archivePath == other.archivePath && subdir == other.subdir &&
+           formatName == other.formatName && password == other.password;
+  }
+  bool operator!=(const ArchiveWriteBackStep &other) const { return !(*this == other); }
+};
 
 // True for 7z/zip split-volume paths such as archive.7z.001.
 bool isSplitVolumePath(const QString &path);

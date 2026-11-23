@@ -8,7 +8,7 @@
 
 AboutDialog::AboutDialog(QWidget *parent) : QDialog(parent)
 {
-  setWindowTitle(QStringLiteral("About 7zipLX"));
+  setWindowTitle(AboutDialog::tr("About 7zipLX"));
   setWindowIcon(QIcon());
   setMinimumWidth(520);
   auto *layout = new QVBoxLayout(this);
@@ -19,11 +19,11 @@ AboutDialog::AboutDialog(QWidget *parent) : QDialog(parent)
   title->setObjectName(QStringLiteral("dialogHeading"));
   layout->addWidget(title);
 
-  auto *sub = new QLabel(QStringLiteral("A native Linux GUI for the 7-Zip archive engine."), this);
+  auto *sub = new QLabel(AboutDialog::tr("A native Linux GUI for the 7-Zip archive engine."), this);
   sub->setWordWrap(true);
   layout->addWidget(sub);
 
-  auto *version = new QLabel(QStringLiteral("Version 0.4.0 · Qt %1 · 7-Zip 26.06").arg(QString::fromLatin1(qVersion())), this);
+  auto *version = new QLabel(AboutDialog::tr("Version 0.5.0 · Qt %1 · 7-Zip 26.06").arg(QString::fromLatin1(qVersion())), this);
   version->setObjectName(QStringLiteral("dialogSubheading"));
   layout->addWidget(version);
 

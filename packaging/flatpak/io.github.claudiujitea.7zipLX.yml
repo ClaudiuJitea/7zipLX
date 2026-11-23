@@ -1,0 +1,28 @@
+app-id: io.github.claudiujitea.7zipLX
+runtime: org.kde.Platform
+runtime-version: "6.8"
+sdk: org.kde.Sdk
+command: 7ziplx
+finish-args:
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  - --filesystem=home
+  - --filesystem=/tmp
+  - --talk-name=org.freedesktop.portal.Desktop
+modules:
+  - name: 7ziplx
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DSEVENZIP_SOURCE_DIR=7zip-26.06
+      - -DSEVENZIP_EXTERNAL_CODECS=ON
+      - -DBUILD_TESTING=OFF
+    sources:
+      - type: git
+        url: https://github.com/ClaudiuJitea/7zipLX.git
+        branch: main
+      - type: archive
+        url: https://codeload.github.com/ip7z/7zip/tar.gz/refs/tags/26.06
+        sha256: 63bbf0ede83e4286ec8a2905ed732a12acc36dd4771984d870b054240ce761fa

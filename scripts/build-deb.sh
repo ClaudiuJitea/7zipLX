@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="${VERSION:-0.4.0}"
+VERSION="${VERSION:-0.5.0}"
 REVISION="${REVISION:-1}"
 ARCH="${ARCH:-$(dpkg --print-architecture)}"
 MULTIARCH="${MULTIARCH:-$(dpkg-architecture -qDEB_HOST_MULTIARCH)}"
@@ -17,11 +17,17 @@ if [[ ! -f "$ROOT/7z2606-src/CPP/7zip/UI/Common/LoadCodecs.h" ]]; then
   "$ROOT/scripts/fetch-7zip.sh"
 fi
 
-cmake -S "$ROOT" -B "$BUILD_DIR" -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX=/usr \
-  -DCMAKE_INSTALL_LIBDIR="lib/$MULTIARCH" \
+CMAKE_ARGS=(
+  -DCMAKE_BUILD_TYPE=Release
+  -DCMAKE_INSTALL_PREFIX=/usr
+  -DCMAKE_INSTALL_LIBDIR="lib/$MULTIARCH"
   -DCMAKE_INSTALL_DOCDIR=share/doc/7ziplx
+  -DSEVENZIP_BUILD_ASM="${SEVENZIP_BUILD_ASM:-OFF}"
+)
+if [[ -n "${SEVENZIP_ASM_COMPILER:-}" ]]; then
+  CMAKE_ARGS+=(-DSEVENZIP_ASM_COMPILER="$SEVENZIP_ASM_COMPILER")
+fi
+cmake -S "$ROOT" -B "$BUILD_DIR" -G Ninja "${CMAKE_ARGS[@]}"
 cmake --build "$BUILD_DIR" -j"$(nproc)"
 
 rm -rf "$STAGE"
@@ -97,9 +103,10 @@ INSTALLED_SIZE="$(du -sk "$STAGE/usr" | awk '{print $1}')"
   fi
   cat <<'CONTROL_DESCRIPTION'
 Description: native Linux GUI for the 7-Zip archive engine
- 7zipLX is a two-panel Qt 6 archive manager built around the portable
- 7-Zip engine. It supports archive browsing, extraction, compression,
- testing, encrypted archives, hashes, benchmarks and in-archive editing.
+ 7zipLX is a Qt 6 archive manager built around the portable 7-Zip engine.
+ It opens with a single pane and offers a second pane on F9. It supports
+ archive browsing, extraction, compression, testing, encrypted archives,
+ hashes, benchmarks and in-archive editing.
  .
  Windows-only integration (Explorer shell extension, NTFS streams and drive
  letters) is intentionally not included.
@@ -121,3 +128,8 @@ DEB="$OUT/7ziplx_${VERSION}-${REVISION}_${ARCH}.deb"
 dpkg-deb --build --root-owner-group "$STAGE" "$DEB" >/dev/null
 printf '\nCreated: %s\n' "$DEB"
 dpkg-deb --info "$DEB" | sed -n '1,30p'
+(
+  cd "$OUT"
+  find . -maxdepth 1 -type f \( -name '*.deb' -o -name '*.AppImage' \) -printf '%f\n' \
+    | sort | xargs -r sha256sum > SHA256SUMS
+)

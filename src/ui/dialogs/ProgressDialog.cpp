@@ -30,10 +30,10 @@ ProgressDialog::ProgressDialog(ProgressState *state, const QString &title, QWidg
   layout->setSpacing(12);
 
   m_title = new QLabel(title, this);
-  m_title->setObjectName(QStringLiteral("dialogHeading"));
+  m_title->setObjectName(ProgressDialog::tr("dialogHeading"));
   layout->addWidget(m_title);
 
-  m_status = new QLabel(QStringLiteral("Preparing..."), this);
+  m_status = new QLabel(ProgressDialog::tr("Preparing..."), this);
   m_status->setObjectName(QStringLiteral("progressStatus"));
   m_status->setWordWrap(true);
   layout->addWidget(m_status);
@@ -49,11 +49,11 @@ ProgressDialog::ProgressDialog(ProgressState *state, const QString &title, QWidg
   m_bytesBar = new QProgressBar(this);
   m_bytesBar->setRange(0, 1000);
   m_bytesBar->setValue(0);
-  form->addRow(QStringLiteral("Bytes:"), m_bytesBar);
+  form->addRow(ProgressDialog::tr("Bytes:"), m_bytesBar);
   m_filesBar = new QProgressBar(this);
   m_filesBar->setRange(0, 1000);
   m_filesBar->setValue(0);
-  form->addRow(QStringLiteral("Files:"), m_filesBar);
+  form->addRow(ProgressDialog::tr("Files:"), m_filesBar);
   m_stats = new QLabel(this);
   m_stats->setObjectName(QStringLiteral("progressStats"));
   form->addRow(QString(), m_stats);
@@ -64,13 +64,13 @@ ProgressDialog::ProgressDialog(ProgressState *state, const QString &title, QWidg
   m_messages->setReadOnly(true);
   m_messages->setMaximumBlockCount(1000);
   m_messages->setMinimumHeight(130);
-  m_messages->setPlaceholderText(QStringLiteral("Operation details will appear here."));
+  m_messages->setPlaceholderText(ProgressDialog::tr("Operation details will appear here."));
   layout->addWidget(m_messages, 1);
 
   auto *buttons = new QHBoxLayout();
   buttons->setContentsMargins(0, 4, 0, 0);
   buttons->addStretch();
-  m_cancel = new QPushButton(QStringLiteral("Cancel"), this);
+  m_cancel = new QPushButton(ProgressDialog::tr("Cancel"), this);
   m_cancel->setAutoDefault(false);
   m_cancel->setMinimumWidth(100);
   buttons->addWidget(m_cancel);
@@ -89,8 +89,8 @@ void ProgressDialog::cancelClicked()
   if (m_state)
     m_state->cancel();
   m_cancel->setEnabled(false);
-  m_cancel->setText(QStringLiteral("Canceling..."));
-  m_status->setText(QStringLiteral("Canceling..."));
+  m_cancel->setText(ProgressDialog::tr("Canceling..."));
+  m_status->setText(ProgressDialog::tr("Canceling..."));
 }
 
 void ProgressDialog::closeEvent(QCloseEvent *event)

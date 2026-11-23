@@ -22,7 +22,7 @@ HashResultDialog::HashResultDialog(const QString &title, const QStringList &line
   auto *heading = new QLabel(title, this);
   heading->setObjectName(QStringLiteral("dialogHeading"));
   layout->addWidget(heading);
-  auto *sub = new QLabel(QStringLiteral("Select the values below or use Copy to put them on the clipboard."), this);
+  auto *sub = new QLabel(HashResultDialog::tr("Select the values below or use Copy to put them on the clipboard."), this);
   sub->setObjectName(QStringLiteral("dialogSubheading"));
   sub->setWordWrap(true);
   layout->addWidget(sub);
@@ -32,7 +32,7 @@ HashResultDialog::HashResultDialog(const QString &title, const QStringList &line
   m_text->setPlainText(lines.join(QLatin1Char('\n')));
   layout->addWidget(m_text);
   auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
-  auto *copy = buttons->addButton(QStringLiteral("Copy"), QDialogButtonBox::ActionRole);
+  auto *copy = buttons->addButton(HashResultDialog::tr("Copy"), QDialogButtonBox::ActionRole);
   layout->addWidget(buttons);
   connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
   connect(copy, &QPushButton::clicked, this, [this] {

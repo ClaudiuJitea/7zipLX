@@ -7,6 +7,7 @@
 #include "backend/ArchiveWriteBack.h"
 #include "backend/ProgressState.h"
 #include "backend/PromptDispatcher.h"
+#include "ui/Theme.h"
 
 #include <QComboBox>
 #include <QLineEdit>
@@ -30,6 +31,7 @@
 #include <QDirIterator>
 #include <QTemporaryDir>
 #include <algorithm>
+#include <utility>
 
 FilePanel::FilePanel(QWidget *parent) : QWidget(parent)
 {
@@ -44,8 +46,8 @@ FilePanel::FilePanel(QWidget *parent) : QWidget(parent)
   top->setSpacing(5);
   m_upButton = new QToolButton(this);
   m_upButton->setAutoRaise(true);
-  m_upButton->setToolTip(QStringLiteral("Up one level"));
-  m_upButton->setIcon(QIcon(QStringLiteral(":/icons/toolbar/up.svg")));
+  m_upButton->setToolTip(FilePanel::tr("Up one level"));
+  m_upButton->setIcon(Theme::toolbarIcon(QStringLiteral("up.svg")));
   m_upButton->setIconSize(QSize(16, 16));
   top->addWidget(m_upButton);
   m_pathBar = new QComboBox(this);
@@ -57,8 +59,8 @@ FilePanel::FilePanel(QWidget *parent) : QWidget(parent)
   top->addWidget(m_pathBar, 1);
   m_refreshButton = new QToolButton(this);
   m_refreshButton->setAutoRaise(true);
-  m_refreshButton->setToolTip(QStringLiteral("Refresh"));
-  m_refreshButton->setIcon(QIcon(QStringLiteral(":/icons/toolbar/refresh.svg")));
+  m_refreshButton->setToolTip(FilePanel::tr("Refresh"));
+  m_refreshButton->setIcon(Theme::toolbarIcon(QStringLiteral("refresh.svg")));
   m_refreshButton->setIconSize(QSize(16, 16));
   top->addWidget(m_refreshButton);
   layout->addLayout(top);
@@ -187,6 +189,14 @@ void FilePanel::setShowGrid(bool show)
   m_view->setShowGrid(show);
 }
 
+void FilePanel::updateThemeIcons()
+{
+  if (m_upButton)
+    m_upButton->setIcon(Theme::toolbarIcon(QStringLiteral("up.svg")));
+  if (m_refreshButton)
+    m_refreshButton->setIcon(Theme::toolbarIcon(QStringLiteral("refresh.svg")));
+}
+
 void FilePanel::setFlatMode(bool flat)
 {
   m_flatMode = flat;
@@ -212,7 +222,7 @@ void FilePanel::setRootMode()
   setMode(RootMode);
   m_rootModel->refresh();
   updatePathBar();
-  emit pathChanged(QStringLiteral("Computer"));
+  emit pathChanged(FilePanel::tr("Computer"));
   updateStatus();
 }
 
@@ -268,7 +278,7 @@ bool FilePanel::openNestedArchive(int row, ProgressState *progress, PromptDispat
   ArchiveSession *session = m_archiveModel->session();
   if (!session)
   {
-    if (error) *error = QStringLiteral("No archive is open");
+    if (error) *error = FilePanel::tr("No archive is open");
     return false;
   }
   const ArchiveEntryInfo entry = m_archiveModel->entry(row);
@@ -278,7 +288,7 @@ bool FilePanel::openNestedArchive(int row, ProgressState *progress, PromptDispat
   auto temp = std::make_shared<QTemporaryDir>();
   if (!temp->isValid())
   {
-    if (error) *error = QStringLiteral("Cannot create a temporary directory");
+    if (error) *error = FilePanel::tr("Cannot create a temporary directory");
     return false;
   }
 
@@ -297,7 +307,7 @@ bool FilePanel::openNestedArchive(int row, ProgressState *progress, PromptDispat
   QDirIterator it(temp->path(), QDir::Files, QDirIterator::Subdirectories);
   if (!it.hasNext())
   {
-    if (error) *error = QStringLiteral("The extracted item is not a file");
+    if (error) *error = FilePanel::tr("The extracted item is not a file");
     return false;
   }
   const QString extracted = it.next();
@@ -545,6 +555,33 @@ void FilePanel::selectArchiveEntries(const QStringList &names)
   updateStatus();
 }
 
+void FilePanel::setDragMaterializer(DragMaterializer materializer)
+{
+  m_dragMaterializer = std::move(materializer);
+}
+
+void FilePanel::setDragReleaser(DragReleaser releaser)
+{
+  m_dragReleaser = std::move(releaser);
+}
+
+QStringList FilePanel::materializeForDrag(const PanelTransfer &transfer, QString *error) const
+{
+  if (!m_dragMaterializer)
+  {
+    if (error)
+      *error = FilePanel::tr("Archive dragging is not available.");
+    return {};
+  }
+  return m_dragMaterializer(const_cast<FilePanel *>(this), transfer, error);
+}
+
+void FilePanel::releaseDrag(const QStringList &paths) const
+{
+  if (m_dragReleaser)
+    m_dragReleaser(const_cast<FilePanel *>(this), paths);
+}
+
 PanelTransfer FilePanel::selectionTransfer() const
 {
   PanelTransfer transfer;
@@ -655,7 +692,7 @@ bool FilePanel::canCommitNestedArchive(QString *reason) const
   {
     if (!model || !model->session())
     {
-      if (reason) *reason = QStringLiteral("The parent archive is no longer open.");
+      if (reason) *reason = FilePanel::tr("The parent archive is no longer open.");
       return false;
     }
     const ArchiveSession *session = model->session();
@@ -675,7 +712,7 @@ OperationResult FilePanel::commitNestedArchive(ProgressState *progress, PromptDi
   if (!m_archiveModel || !m_archiveModel->session())
   {
     result.ok = false;
-    result.error = QStringLiteral("The nested archive is no longer open.");
+    result.error = FilePanel::tr("The nested archive is no longer open.");
     return result;
   }
 
@@ -686,7 +723,7 @@ OperationResult FilePanel::commitNestedArchive(ProgressState *progress, PromptDi
     if (!parentModel || !parentModel->session())
     {
       result.ok = false;
-      result.error = QStringLiteral("The parent archive is no longer open.");
+      result.error = FilePanel::tr("The parent archive is no longer open.");
       return result;
     }
     ArchiveSession *parent = parentModel->session();
@@ -699,6 +736,31 @@ OperationResult FilePanel::commitNestedArchive(ProgressState *progress, PromptDi
     childFile = parentFile;
   }
   return result;
+}
+
+QVector<ArchiveWriteBackStep> FilePanel::archiveWriteBackSteps(const QString &entryPath) const
+{
+  QVector<ArchiveWriteBackStep> steps;
+  if (!isArchive() || !m_archiveModel || !m_archiveModel->session())
+    return steps;
+
+  const ArchiveSession *current = m_archiveModel->session();
+  QString subdir;
+  const int slash = entryPath.lastIndexOf(QLatin1Char('/'));
+  if (slash > 0)
+    subdir = entryPath.left(slash);
+  steps.append({current->archivePath(), subdir, current->formatName(), current->password()});
+
+  for (int i = m_archiveParents.size() - 1; i >= 0; --i)
+  {
+    ArchiveFolderModel *parentModel = m_archiveParents.at(i);
+    if (!parentModel || !parentModel->session())
+      continue;
+    const ArchiveSession *parent = parentModel->session();
+    steps.append({parent->archivePath(), parent->relativePath(), parent->formatName(),
+                  parent->password()});
+  }
+  return steps;
 }
 
 bool FilePanel::refreshNestedParents(ProgressState *progress, PromptDispatcher *prompts,
@@ -768,7 +830,7 @@ QString FilePanel::displayPath() const
     return (m_archiveRootDisplay.isEmpty() ? m_archiveModel->path() : m_archiveRootDisplay)
         + QLatin1Char('/') + relative;
   }
-  if (m_mode == RootMode) return QStringLiteral("Computer");
+  if (m_mode == RootMode) return FilePanel::tr("Computer");
   return m_localModel->path();
 }
 
@@ -941,9 +1003,11 @@ void FilePanel::updateStatus()
           selectedBytes += quint64(info.size());
       }
     }
-    QString text = QStringLiteral("%1 item(s)   %2 selected").arg(total).arg(selected);
+    QString text = m_localModel->isLoading()
+        ? FilePanel::tr("Loading...   %1 item(s)").arg(total)
+        : FilePanel::tr("%1 item(s)   %2 selected").arg(total).arg(selected);
     if (selectedBytes > 0)
-      text += QStringLiteral("   %1").arg(panelSizeText(selectedBytes));
+      text += FilePanel::tr("   %1").arg(panelSizeText(selectedBytes));
     m_status->setText(text);
   }
   else if (m_mode == ArchiveMode)
@@ -954,15 +1018,15 @@ void FilePanel::updateStatus()
     quint64 selectedBytes = 0;
     for (int row : rows)
       selectedBytes += m_archiveModel->entry(row).size;
-    QString text = QStringLiteral("%1 item(s)   %2 selected").arg(total).arg(selected);
+    QString text = FilePanel::tr("%1 item(s)   %2 selected").arg(total).arg(selected);
     if (selectedBytes > 0)
-      text += QStringLiteral("   %1").arg(panelSizeText(selectedBytes));
-    text += QStringLiteral("   %1").arg(displayPath());
+      text += FilePanel::tr("   %1").arg(panelSizeText(selectedBytes));
+    text += FilePanel::tr("   %1").arg(displayPath());
     m_status->setText(text);
   }
   else
   {
-    m_status->setText(QStringLiteral("Mounted filesystems"));
+    m_status->setText(FilePanel::tr("Mounted filesystems"));
   }
 }
 
@@ -1000,8 +1064,13 @@ void FilePanel::connectModelSignals()
       saveLocalSelection();
   });
   connect(m_localModel, &QAbstractItemModel::modelReset, this, [this] {
-    if (m_mode == LocalMode)
+    if (m_mode == LocalMode && !m_localModel->isLoading())
       scheduleLocalSelectionRestore();
+  });
+  connect(m_localModel, &LocalFsModel::loadingChanged, this, [this](bool loading) {
+    if (!loading)
+      scheduleLocalSelectionRestore();
+    updateStatus();
   });
   connect(m_archiveModel, &QAbstractItemModel::modelAboutToBeReset, this, [this] {
     if (m_mode == ArchiveMode)
@@ -1032,6 +1101,8 @@ QString FilePanel::archiveKeyForRow(int row) const
 
 void FilePanel::saveLocalSelection()
 {
+  if (m_localModel->isLoading() && m_savedLocalRoot == m_localModel->path())
+    return;
   m_savedLocalRoot = m_localModel->path();
   m_savedLocalSelection.clear();
   m_savedLocalCurrent.clear();
@@ -1094,6 +1165,8 @@ void FilePanel::scheduleArchiveSelectionRestore()
 void FilePanel::restoreLocalSelection()
 {
   if (m_mode != LocalMode || m_restoringSelection)
+    return;
+  if (m_localModel->isLoading())
     return;
   if (m_savedLocalRoot != m_localModel->path())
     return;

@@ -4,10 +4,19 @@
 #include <QFileInfo>
 #include <QFileIconProvider>
 #include <QFileSystemWatcher>
+#include <QFutureWatcher>
 #include <QTimer>
 #include <QHash>
 #include <QIcon>
 #include <QMimeData>
+
+struct LocalFsScanResult
+{
+  QString path;
+  quint64 generation = 0;
+  QFileInfoList entries;
+  bool ok = false;
+};
 
 class LocalFsModel : public QAbstractTableModel
 {
@@ -28,6 +37,7 @@ public:
   bool showDots() const { return m_showDots; }
 
   void refresh();
+  bool isLoading() const { return m_loading; }
   QFileInfo fileInfo(int row) const;
   bool isParentRow(int row) const;
   QString filePath(int row) const;
@@ -44,10 +54,13 @@ public:
 
 signals:
   void pathChanged(const QString &path);
+  void loadingChanged(bool loading);
 
 private:
   QIcon iconFor(const QFileInfo &fi) const;
   void scheduleRefresh();
+  void applyNextBatch();
+  void finishLoading();
 
   QString m_path;
   QFileInfoList m_entries;
@@ -60,4 +73,10 @@ private:
   mutable QHash<QString, QIcon> m_iconCache;
   QFileSystemWatcher m_watcher;
   QTimer m_refreshTimer;
+  QFutureWatcher<LocalFsScanResult> m_scanWatcher;
+  QFileInfoList m_pendingEntries;
+  int m_pendingIndex = 0;
+  quint64 m_generation = 0;
+  quint64 m_batchGeneration = 0;
+  bool m_loading = false;
 };

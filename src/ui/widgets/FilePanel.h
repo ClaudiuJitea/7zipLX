@@ -2,11 +2,13 @@
 
 #include <QWidget>
 #include <QVector>
+#include <functional>
 #include <QStringList>
 #include <QSet>
 #include <memory>
 
 #include "backend/ArchiveSession.h"
+#include "backend/ArchiveWriteBack.h"
 #include "PanelTransfer.h"
 
 class LocalFsModel;
@@ -34,6 +36,7 @@ public:
   void setShowHidden(bool show);
   void setShowDots(bool show);
   void setShowGrid(bool show);
+  void updateThemeIcons();
   void setFlatMode(bool flat);
   bool openArchive(const QString &path, ProgressState *progress, PromptDispatcher *prompts,
                    QString *error, const QString &password = QString(), const QString &formatHint = QString());
@@ -56,6 +59,12 @@ public:
   void selectLocalPaths(const QStringList &paths);
   void selectArchiveEntries(const QStringList &names);
   PanelTransfer selectionTransfer() const;
+  using DragMaterializer = std::function<QStringList(FilePanel *, const PanelTransfer &, QString *)>;
+  void setDragMaterializer(DragMaterializer materializer);
+  using DragReleaser = std::function<void(FilePanel *, const QStringList &)>;
+  void setDragReleaser(DragReleaser releaser);
+  QStringList materializeForDrag(const PanelTransfer &transfer, QString *error) const;
+  void releaseDrag(const QStringList &paths) const;
   PanelDropTarget dropTargetForPosition(const QPoint &viewportPos) const;
   QString archiveRelativePath() const;
 
@@ -65,6 +74,7 @@ public:
   bool reloadArchive(ProgressState *progress, PromptDispatcher *prompts, QString *error);
   bool canCommitNestedArchive(QString *reason) const;
   OperationResult commitNestedArchive(ProgressState *progress, PromptDispatcher *prompts);
+  QVector<ArchiveWriteBackStep> archiveWriteBackSteps(const QString &entryPath) const;
   bool refreshNestedParents(ProgressState *progress, PromptDispatcher *prompts, QString *error);
   QString localPath() const;
   QString displayPath() const;
@@ -131,6 +141,8 @@ private:
   QToolButton *m_refreshButton = nullptr;
   QTableView *m_view = nullptr;
   QLabel *m_status = nullptr;
+  DragMaterializer m_dragMaterializer;
+  DragReleaser m_dragReleaser;
 
   QSet<QString> m_savedLocalSelection;
   QString m_savedLocalCurrent;

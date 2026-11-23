@@ -6,9 +6,86 @@
 #include <QTimer>
 #include <QCollator>
 #include <QFile>
+#include <QFutureWatcher>
+#include <QtConcurrent/QtConcurrentRun>
 #include <algorithm>
 #include <QMimeData>
 #include <QUrl>
+
+namespace {
+
+struct ScanRequest
+{
+  QString path;
+  bool showHidden = false;
+  bool showDots = true;
+  bool flatMode = false;
+  int sortColumn = 0;
+  Qt::SortOrder sortOrder = Qt::AscendingOrder;
+  quint64 generation = 0;
+};
+
+LocalFsScanResult scanLocalFolder(const ScanRequest &request)
+{
+  LocalFsScanResult result;
+  result.path = request.path;
+  result.generation = request.generation;
+  QDir dir(request.path);
+  if (!dir.exists())
+    return result;
+
+  QDir::Filters filters = QDir::AllEntries | QDir::NoDotAndDotDot | QDir::System;
+  if (request.showHidden)
+    filters |= QDir::Hidden;
+  if (request.flatMode)
+  {
+    QDirIterator it(request.path, filters, QDirIterator::Subdirectories);
+    while (it.hasNext())
+      result.entries.append(it.nextFileInfo());
+  }
+  else
+  {
+    result.entries = dir.entryInfoList(filters, QDir::NoSort);
+    if (request.showDots && request.path != QLatin1String("/"))
+    {
+      QFileInfo parent(request.path + QLatin1String("/.."));
+      if (parent.exists())
+        result.entries.prepend(parent);
+    }
+  }
+
+  QCollator collator;
+  collator.setNumericMode(true);
+  collator.setCaseSensitivity(Qt::CaseInsensitive);
+  const int column = request.sortColumn;
+  const Qt::SortOrder order = request.sortOrder;
+  std::stable_sort(result.entries.begin(), result.entries.end(),
+                   [&](const QFileInfo &a, const QFileInfo &b) {
+    const bool ad = a.isDir();
+    const bool bd = b.isDir();
+    if (ad != bd)
+      return ad;
+    int cmp = 0;
+    switch (column)
+    {
+      case 1: cmp = a.size() == b.size() ? 0 : (a.size() < b.size() ? -1 : 1); break;
+      case 2: cmp = collator.compare(a.suffix(), b.suffix()); break;
+      case 3: cmp = a.lastModified() == b.lastModified() ? 0 : (a.lastModified() < b.lastModified() ? -1 : 1); break;
+      case 4: cmp = int(a.permissions()) - int(b.permissions()); break;
+      default:
+        cmp = collator.compare(request.flatMode ? dir.relativeFilePath(a.absoluteFilePath()) : a.fileName(),
+                               request.flatMode ? dir.relativeFilePath(b.absoluteFilePath()) : b.fileName());
+        break;
+    }
+    if (cmp == 0)
+      cmp = collator.compare(a.fileName(), b.fileName());
+    return order == Qt::AscendingOrder ? cmp < 0 : cmp > 0;
+  });
+  result.ok = true;
+  return result;
+}
+
+} // namespace
 
 LocalFsModel::LocalFsModel(QObject *parent) : QAbstractTableModel(parent)
 {
@@ -16,6 +93,23 @@ LocalFsModel::LocalFsModel(QObject *parent) : QAbstractTableModel(parent)
   m_refreshTimer.setInterval(250);
   connect(&m_refreshTimer, &QTimer::timeout, this, &LocalFsModel::refresh);
   connect(&m_watcher, &QFileSystemWatcher::directoryChanged, this, &LocalFsModel::scheduleRefresh);
+  connect(&m_scanWatcher, &QFutureWatcher<LocalFsScanResult>::finished, this, [this] {
+    const LocalFsScanResult result = m_scanWatcher.result();
+    if (result.generation != m_generation || result.path != m_path)
+      return;
+    m_batchGeneration = result.generation;
+    beginResetModel();
+    m_entries.clear();
+    endResetModel();
+    m_pendingEntries = result.entries;
+    m_pendingIndex = 0;
+    if (m_pendingEntries.isEmpty())
+    {
+      finishLoading();
+      return;
+    }
+    applyNextBatch();
+  });
 }
 
 void LocalFsModel::setPath(const QString &path)
@@ -68,67 +162,60 @@ void LocalFsModel::scheduleRefresh()
 
 void LocalFsModel::refresh()
 {
-  QFileInfoList list;
-  QDir dir(m_path);
-  if (dir.exists())
+  m_refreshTimer.stop();
+  ++m_generation;
+  ScanRequest request;
+  request.path = m_path;
+  request.showHidden = m_showHidden;
+  request.showDots = m_showDots;
+  request.flatMode = m_flatMode;
+  request.sortColumn = m_sortColumn;
+  request.sortOrder = m_sortOrder;
+  request.generation = m_generation;
+
+  if (!m_loading)
   {
-    QDir::Filters filters = QDir::AllEntries | QDir::NoDotAndDotDot | QDir::System;
-    if (m_showHidden)
-      filters |= QDir::Hidden;
-    if (m_flatMode)
-    {
-      QDirIterator it(m_path, filters, QDirIterator::Subdirectories);
-      while (it.hasNext())
-      {
-        const QFileInfo fi = it.nextFileInfo();
-        list.append(fi);
-      }
-    }
-    else
-    {
-      list = dir.entryInfoList(filters, QDir::NoSort);
-      if (m_showDots && m_path != QLatin1String("/"))
-      {
-        QFileInfo parent(m_path + QLatin1String("/.."));
-        if (parent.exists())
-        {
-          list.prepend(parent);
-        }
-      }
-    }
+    m_loading = true;
+    emit loadingChanged(true);
   }
-
-  QCollator collator;
-  collator.setNumericMode(true);
-  collator.setCaseSensitivity(Qt::CaseInsensitive);
-  const int col = m_sortColumn;
-  const Qt::SortOrder order = m_sortOrder;
-  std::stable_sort(list.begin(), list.end(), [&](const QFileInfo &a, const QFileInfo &b) {
-    const bool ad = a.isDir();
-    const bool bd = b.isDir();
-    if (ad != bd)
-      return ad;
-    int cmp = 0;
-    switch (col)
-    {
-      case ColumnSize: cmp = a.size() == b.size() ? 0 : (a.size() < b.size() ? -1 : 1); break;
-      case ColumnType: cmp = collator.compare(a.suffix(), b.suffix()); break;
-      case ColumnModified: cmp = a.lastModified() == b.lastModified() ? 0 : (a.lastModified() < b.lastModified() ? -1 : 1); break;
-      case ColumnPermissions: cmp = int(a.permissions()) - int(b.permissions()); break;
-      case ColumnName:
-      default:
-        cmp = collator.compare(m_flatMode ? dir.relativeFilePath(a.absoluteFilePath()) : a.fileName(),
-                               m_flatMode ? dir.relativeFilePath(b.absoluteFilePath()) : b.fileName());
-        break;
-    }
-    if (cmp == 0)
-      cmp = collator.compare(a.fileName(), b.fileName());
-    return order == Qt::AscendingOrder ? cmp < 0 : cmp > 0;
-  });
-
   beginResetModel();
-  m_entries = list;
+  m_entries.clear();
+  m_pendingEntries.clear();
+  m_pendingIndex = 0;
   endResetModel();
+
+  // QFutureWatcher tracks only the latest request; older scans finish and are
+  // ignored through the generation check above.
+  m_scanWatcher.setFuture(QtConcurrent::run(scanLocalFolder, request));
+}
+
+void LocalFsModel::applyNextBatch()
+{
+  if (m_batchGeneration != m_generation)
+    return;
+  if (m_pendingIndex >= m_pendingEntries.size())
+  {
+    finishLoading();
+    return;
+  }
+  const int count = qMin(1000, m_pendingEntries.size() - m_pendingIndex);
+  const int first = m_entries.size();
+  beginInsertRows(QModelIndex(), first, first + count - 1);
+  for (int i = 0; i < count; ++i)
+    m_entries.append(m_pendingEntries.at(m_pendingIndex + i));
+  endInsertRows();
+  m_pendingIndex += count;
+  QTimer::singleShot(0, this, &LocalFsModel::applyNextBatch);
+}
+
+void LocalFsModel::finishLoading()
+{
+  m_pendingEntries.clear();
+  m_pendingIndex = 0;
+  if (!m_loading)
+    return;
+  m_loading = false;
+  emit loadingChanged(false);
 }
 
 QFileInfo LocalFsModel::fileInfo(int row) const
@@ -199,9 +286,9 @@ QVariant LocalFsModel::data(const QModelIndex &index, int role) const
         if (fi.isDir()) return QStringLiteral("<DIR>");
         return QLocale().formattedDataSize(fi.size(), 1, QLocale::DataSizeTraditionalFormat);
       case ColumnType:
-        if (fi.isDir()) return QStringLiteral("Folder");
-        if (fi.isSymLink()) return QStringLiteral("Link -> %1").arg(fi.symLinkTarget());
-        return fi.suffix().isEmpty() ? QStringLiteral("File") : QStringLiteral("%1 file").arg(fi.suffix().toUpper());
+        if (fi.isDir()) return LocalFsModel::tr("Folder");
+        if (fi.isSymLink()) return LocalFsModel::tr("Link -> %1").arg(fi.symLinkTarget());
+        return fi.suffix().isEmpty() ? LocalFsModel::tr("File") : LocalFsModel::tr("%1 file").arg(fi.suffix().toUpper());
       case ColumnModified:
         return QLocale().toString(fi.lastModified(), QLocale::ShortFormat);
       case ColumnPermissions:
@@ -256,11 +343,11 @@ QVariant LocalFsModel::headerData(int section, Qt::Orientation orientation, int 
     return QVariant();
   switch (section)
   {
-    case ColumnName: return QStringLiteral("Name");
-    case ColumnSize: return QStringLiteral("Size");
-    case ColumnType: return QStringLiteral("Type");
-    case ColumnModified: return QStringLiteral("Modified");
-    case ColumnPermissions: return QStringLiteral("Permissions");
+    case ColumnName: return LocalFsModel::tr("Name");
+    case ColumnSize: return LocalFsModel::tr("Size");
+    case ColumnType: return LocalFsModel::tr("Type");
+    case ColumnModified: return LocalFsModel::tr("Modified");
+    case ColumnPermissions: return LocalFsModel::tr("Permissions");
     default: return QVariant();
   }
 }

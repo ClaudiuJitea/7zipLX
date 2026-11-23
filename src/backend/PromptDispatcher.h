@@ -34,11 +34,11 @@ public:
 
   // All methods are safe to call from a worker thread. They block that thread
   // while the prompt is executed on the GUI thread.
-  bool askPassword(QString *password, bool *ok, const QString &title = QString());
-  OverwriteAnswer askOverwrite(const OverwriteInfo &info);
-  bool confirm(const QString &title, const QString &text, bool dangerous = false);
-  void showError(const QString &title, const QString &text);
-  void showInfo(const QString &title, const QString &text);
+  virtual bool askPassword(QString *password, bool *ok, const QString &title = QString());
+  virtual OverwriteAnswer askOverwrite(const OverwriteInfo &info);
+  virtual bool confirm(const QString &title, const QString &text, bool dangerous = false);
+  virtual void showError(const QString &title, const QString &text);
+  virtual void showInfo(const QString &title, const QString &text);
 
 private:
   template<typename Fn>

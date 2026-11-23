@@ -1,6 +1,10 @@
 # Application source
 
-- `app/` — `QApplication`, main window, actions and operation orchestration.
+- `app/` — main window/menu wiring plus the action layer:
+  `OperationRunner` (worker thread + progress dialog),
+  `ExternalToolController` (view/edit/diff/drag materialization and write-back),
+  `HashController` (local and streamed archive hashing) and `TransferController`
+  (local/archive/archive-to-archive copy and move).
 - `backend/` — 7-Zip adapter and callback bridge. No 7-Zip headers in public Qt
   headers; implementation details stay behind pimpl.
 - `models/` — `LocalFsModel`, `RootModel`, archive-folder model.
@@ -14,6 +18,8 @@ Rules:
 1. Do not include 7-Zip headers from Qt public headers.
 2. No UI calls from worker threads; use signals or blocking queued prompts.
 3. Centralize all `UString`/`QString` conversion in `backend/Unicode.*`.
+   User-facing UI strings use `tr()`; run `scripts/update-translations.sh` after
+   adding new ones.
 4. Route all archive paths through 7-Zip sanitizers; never join untrusted entry
    names manually.
 5. Every destructive action must be confirmable.

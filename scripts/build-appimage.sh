@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="${VERSION:-0.4.0}"
+VERSION="${VERSION:-0.5.0}"
 ARCH="${ARCH:-x86_64}"
 BUILD_DIR="${BUILD_DIR:-$ROOT/build-release}"
 APPDIR="${APPDIR:-$ROOT/build-appimage/AppDir}"
@@ -15,11 +15,17 @@ if [[ ! -f "$ROOT/7z2606-src/CPP/7zip/UI/Common/LoadCodecs.h" ]]; then
   "$ROOT/scripts/fetch-7zip.sh"
 fi
 
-cmake -S "$ROOT" -B "$BUILD_DIR" -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX=/usr \
-  -DCMAKE_INSTALL_LIBDIR="lib/$MULTIARCH" \
+CMAKE_ARGS=(
+  -DCMAKE_BUILD_TYPE=Release
+  -DCMAKE_INSTALL_PREFIX=/usr
+  -DCMAKE_INSTALL_LIBDIR="lib/$MULTIARCH"
   -DCMAKE_INSTALL_DOCDIR=share/doc/7ziplx
+  -DSEVENZIP_BUILD_ASM="${SEVENZIP_BUILD_ASM:-OFF}"
+)
+if [[ -n "${SEVENZIP_ASM_COMPILER:-}" ]]; then
+  CMAKE_ARGS+=(-DSEVENZIP_ASM_COMPILER="$SEVENZIP_ASM_COMPILER")
+fi
+cmake -S "$ROOT" -B "$BUILD_DIR" -G Ninja "${CMAKE_ARGS[@]}"
 cmake --build "$BUILD_DIR" -j"$(nproc)"
 
 rm -rf "$APPDIR"
@@ -76,3 +82,8 @@ rm -f "$APPIMAGE"
 chmod +x "$APPIMAGE"
 printf '\nCreated: %s\n' "$APPIMAGE"
 file "$APPIMAGE"
+(
+  cd "$OUT"
+  find . -maxdepth 1 -type f \( -name '*.deb' -o -name '*.AppImage' \) -printf '%f\n' \
+    | sort | xargs -r sha256sum > SHA256SUMS
+)

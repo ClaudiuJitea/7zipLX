@@ -11,11 +11,13 @@
 class FilePanel;
 class PromptDispatcher;
 class ProgressState;
+class OperationRunner;
+class ExternalToolController;
+class HashController;
+class TransferController;
 class QSplitter;
 class QLabel;
 class QAction;
-class QSettings;
-class QTemporaryDir;
 
 class MainWindow : public QMainWindow
 {
@@ -25,9 +27,12 @@ public:
   ~MainWindow() override;
 
   void openPath(const QString &path);
+  void setTwoPanels(bool show);
+  bool twoPanels() const { return m_twoPanels; }
 
 protected:
   void closeEvent(QCloseEvent *event) override;
+  void changeEvent(QEvent *event) override;
 
 private slots:
   void openArchiveDialog();
@@ -77,19 +82,14 @@ private:
   FilePanel *activePanel() const { return m_active; }
   FilePanel *otherPanel() const { return m_active == m_left ? m_right : m_left; }
   void transferToOtherPanel(bool move);
-  bool performTransfer(const PanelTransfer &transfer, FilePanel *target,
-                       const PanelDropTarget &targetPath, Qt::DropAction action,
-                       bool confirmMove = false);
   bool ensureWritableArchive(const QString &action);
   bool commitNestedArchive(FilePanel *panel);
   FilePanel *panelById(int id) const;
   void setClipboardFromSelection(bool cut);
-  void selectTransferredItems(FilePanel *target, const PanelDropTarget &targetPath,
-                              const PanelTransfer &transfer);
   void setActivePanel(FilePanel *panel);
   void updateActions();
-  bool materializeItem(QString *path, QString *error);
-  void launchExternal(const QString &command, const QString &path);
+  void updateThemeIcons();
+  bool revealSecondPanelForTransfer();
   void openCurrentItem();
   void openInside(const QString &formatHint);
   void openCurrentArchiveInside(const QString &formatHint);
@@ -116,5 +116,14 @@ private:
   QAction *m_showHiddenAction = nullptr;
   QAction *m_showDotsAction = nullptr;
   QAction *m_flatViewAction = nullptr;
-  QVector<std::shared_ptr<QTemporaryDir>> m_externalTemps;
+  QAction *m_twoPanelsAction = nullptr;
+  bool m_twoPanels = false;
+  QAction *m_updateEditsAction = nullptr;
+  QAction *m_openAction = nullptr;
+  QAction *m_upAction = nullptr;
+  QAction *m_refreshAction = nullptr;
+  std::unique_ptr<OperationRunner> m_runner;
+  std::unique_ptr<ExternalToolController> m_externalTools;
+  std::unique_ptr<HashController> m_hash;
+  std::unique_ptr<TransferController> m_transfer;
 };

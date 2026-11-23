@@ -24,6 +24,8 @@
 #include <QSet>
 #include <QUrl>
 
+#include "backend/MessageDialog.h"
+
 namespace {
 bool s_internalDropHandled = false;
 
@@ -89,10 +91,32 @@ void FileView::startDrag(Qt::DropActions supportedActions)
   auto *mime = new QMimeData;
   mime->setData(QString::fromLatin1(kPanelTransferMime), transfer.encode());
   mime->setText(transfer.names.join(QLatin1Char('\n')));
+
+  QStringList dragPaths;
   if (transfer.kind == PanelTransfer::Local)
   {
+    dragPaths = transfer.localPaths;
+  }
+  else
+  {
+    // Desktop file managers only understand URL drops.  Archive items are
+    // materialized here with the normal progress dialog; the copies remain in
+    // the capped external-temp cache and are pruned later.
+    QString error;
+    dragPaths = m_panel->materializeForDrag(transfer, &error);
+    if (dragPaths.isEmpty())
+    {
+      if (!error.isEmpty())
+        MessageDialog::show(window(), FileView::tr("Drag"),
+                            FileView::tr("Cannot prepare the archive items"),
+                            error, MessageDialog::Kind::Error);
+      return;
+    }
+  }
+  if (!dragPaths.isEmpty())
+  {
     QList<QUrl> urls;
-    for (const QString &path : transfer.localPaths)
+    for (const QString &path : dragPaths)
       urls << QUrl::fromLocalFile(path);
     mime->setUrls(urls);
   }
@@ -102,8 +126,8 @@ void FileView::startDrag(Qt::DropActions supportedActions)
 
   const int count = transfer.count();
   const QString label = count == 1
-      ? transfer.names.value(0, QStringLiteral("1 item"))
-      : QStringLiteral("%1 items").arg(count);
+      ? transfer.names.value(0, FileView::tr("1 item"))
+      : FileView::tr("%1 items").arg(count);
   QFont font = QApplication::font();
   font.setBold(true);
   const QFontMetrics metrics(font);
@@ -128,6 +152,8 @@ void FileView::startDrag(Qt::DropActions supportedActions)
       (QApplication::keyboardModifiers() & Qt::ShiftModifier) ? Qt::MoveAction : Qt::CopyAction;
   s_internalDropHandled = false;
   const Qt::DropAction result = drag->exec(Qt::CopyAction | Qt::MoveAction, preferred);
+  if (transfer.kind == PanelTransfer::Archive)
+    m_panel->releaseDrag(dragPaths);
 
   // External file managers do not know about our archive sessions.  For local
   // sources we follow the normal desktop convention and remove the source

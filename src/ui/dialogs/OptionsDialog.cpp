@@ -24,19 +24,19 @@
 
 OptionsDialog::OptionsDialog(bool showHidden, bool showDots, bool showGrid, bool flatView,
                              const QString &viewer, const QString &editor, const QString &diff,
-                             const QString &language, QWidget *parent)
+                             const QString &language, const QString &theme, QWidget *parent)
     : QDialog(parent)
 {
-  setWindowTitle(QStringLiteral("Options"));
+  setWindowTitle(OptionsDialog::tr("Options"));
   setWindowIcon(QIcon());
   setMinimumSize(560, 430);
   auto *layout = new QVBoxLayout(this);
   layout->setContentsMargins(24, 22, 24, 18);
   layout->setSpacing(12);
-  auto *heading = new QLabel(QStringLiteral("Options"), this);
+  auto *heading = new QLabel(OptionsDialog::tr("Options"), this);
   heading->setObjectName(QStringLiteral("dialogHeading"));
   layout->addWidget(heading);
-  auto *sub = new QLabel(QStringLiteral("Configure the file list, external tools, associations and language."), this);
+  auto *sub = new QLabel(OptionsDialog::tr("Configure the file list, external tools, associations and language."), this);
   sub->setObjectName(QStringLiteral("dialogSubheading"));
   sub->setWordWrap(true);
   layout->addWidget(sub);
@@ -47,25 +47,38 @@ OptionsDialog::OptionsDialog(bool showHidden, bool showDots, bool showGrid, bool
   auto *general = new QWidget(tabs);
   auto *generalLayout = new QVBoxLayout(general);
   generalLayout->setContentsMargins(14, 14, 14, 14);
-  auto *listGroup = new QGroupBox(QStringLiteral("File list"), general);
+  auto *listGroup = new QGroupBox(OptionsDialog::tr("File list"), general);
   auto *listForm = new QVBoxLayout(listGroup);
   listForm->setContentsMargins(14, 18, 14, 14);
   listForm->setSpacing(8);
-  m_hidden = new QCheckBox(QStringLiteral("Show hidden files"), listGroup);
+  m_hidden = new QCheckBox(OptionsDialog::tr("Show hidden files"), listGroup);
   m_hidden->setChecked(showHidden);
   listForm->addWidget(m_hidden);
-  m_dots = new QCheckBox(QStringLiteral("Show parent entry (..)"), listGroup);
+  m_dots = new QCheckBox(OptionsDialog::tr("Show parent entry (..)"), listGroup);
   m_dots->setChecked(showDots);
   listForm->addWidget(m_dots);
-  m_grid = new QCheckBox(QStringLiteral("Show grid lines"), listGroup);
+  m_grid = new QCheckBox(OptionsDialog::tr("Show grid lines"), listGroup);
   m_grid->setChecked(showGrid);
   listForm->addWidget(m_grid);
-  m_flat = new QCheckBox(QStringLiteral("Flat view (show nested items)"), listGroup);
+  m_flat = new QCheckBox(OptionsDialog::tr("Flat view (show nested items)"), listGroup);
   m_flat->setChecked(flatView);
   listForm->addWidget(m_flat);
   generalLayout->addWidget(listGroup);
+
+  auto *appearanceGroup = new QGroupBox(OptionsDialog::tr("Appearance"), general);
+  auto *appearanceForm = new QFormLayout(appearanceGroup);
+  appearanceForm->setContentsMargins(14, 18, 14, 14);
+  m_theme = new QComboBox(appearanceGroup);
+  m_theme->addItem(OptionsDialog::tr("Follow system"), QStringLiteral("system"));
+  m_theme->addItem(OptionsDialog::tr("Light"), QStringLiteral("light"));
+  m_theme->addItem(OptionsDialog::tr("Dark"), QStringLiteral("dark"));
+  const int themeIndex = m_theme->findData(theme.isEmpty() ? QStringLiteral("system") : theme);
+  if (themeIndex >= 0)
+    m_theme->setCurrentIndex(themeIndex);
+  appearanceForm->addRow(OptionsDialog::tr("Theme:"), m_theme);
+  generalLayout->addWidget(appearanceGroup);
   generalLayout->addStretch();
-  tabs->addTab(general, QStringLiteral("General"));
+  tabs->addTab(general, OptionsDialog::tr("General"));
 
   auto *tools = new QWidget(tabs);
   auto *toolsForm = new QFormLayout(tools);
@@ -73,18 +86,18 @@ OptionsDialog::OptionsDialog(bool showHidden, bool showDots, bool showGrid, bool
   toolsForm->setContentsMargins(14, 14, 14, 14);
   m_viewer = new QLineEdit(viewer, tools);
   m_viewer->setPlaceholderText(QStringLiteral("xdg-open"));
-  toolsForm->addRow(QStringLiteral("Viewer command:"), m_viewer);
+  toolsForm->addRow(OptionsDialog::tr("Viewer command:"), m_viewer);
   m_editor = new QLineEdit(editor, tools);
   m_editor->setPlaceholderText(QStringLiteral("xdg-open"));
-  toolsForm->addRow(QStringLiteral("Editor command:"), m_editor);
+  toolsForm->addRow(OptionsDialog::tr("Editor command:"), m_editor);
   m_diff = new QLineEdit(diff, tools);
   m_diff->setPlaceholderText(QStringLiteral("diff -u"));
-  toolsForm->addRow(QStringLiteral("Diff command:"), m_diff);
-  auto *toolsNote = new QLabel(QStringLiteral("Commands are split into arguments and receive the selected file path(s). Use an absolute path or a command on PATH."), tools);
+  toolsForm->addRow(OptionsDialog::tr("Diff command:"), m_diff);
+  auto *toolsNote = new QLabel(OptionsDialog::tr("Commands are split into arguments and receive the selected file path(s). Use an absolute path or a command on PATH."), tools);
   toolsNote->setWordWrap(true);
   toolsNote->setObjectName(QStringLiteral("dialogSubheading"));
   toolsForm->addRow(toolsNote);
-  tabs->addTab(tools, QStringLiteral("Tools"));
+  tabs->addTab(tools, OptionsDialog::tr("Tools"));
 
   auto *plugins = new QWidget(tabs);
   auto *pluginLayout = new QVBoxLayout(plugins);
@@ -108,32 +121,32 @@ OptionsDialog::OptionsDialog(bool showHidden, bool showDots, bool showGrid, bool
            QString::number(moduleCount),
            QString::number(SevenZipEngine::instance().archiveFormats().size())));
   pluginLayout->addWidget(pluginInfo);
-  auto *pluginNote = new QLabel(QStringLiteral("The module is optional. Third-party modules must use the 7-Zip 26.06 ABI and export GetModuleProp."), plugins);
+  auto *pluginNote = new QLabel(OptionsDialog::tr("The module is optional. Third-party modules must use the 7-Zip 26.06 ABI and export GetModuleProp."), plugins);
   pluginNote->setWordWrap(true);
   pluginNote->setObjectName(QStringLiteral("dialogSubheading"));
   pluginLayout->addWidget(pluginNote);
   pluginLayout->addStretch();
-  tabs->addTab(plugins, QStringLiteral("Plugins"));
+  tabs->addTab(plugins, OptionsDialog::tr("Plugins"));
 
   auto *assoc = new QWidget(tabs);
   auto *assocLayout = new QVBoxLayout(assoc);
   assocLayout->setContentsMargins(14, 14, 14, 14);
-  auto *assocNote = new QLabel(QStringLiteral("Register 7zipLX as a desktop handler for archive MIME types. The desktop file must already be installed."), assoc);
+  auto *assocNote = new QLabel(OptionsDialog::tr("Register 7zipLX as a desktop handler for archive MIME types. The desktop file must already be installed."), assoc);
   assocNote->setWordWrap(true);
   assocLayout->addWidget(assocNote);
-  auto *assocButton = new QPushButton(QStringLiteral("Set as default for 7z and ZIP"), assoc);
+  auto *assocButton = new QPushButton(OptionsDialog::tr("Set as default for 7z and ZIP"), assoc);
   assocLayout->addWidget(assocButton, 0, Qt::AlignLeft);
   assocLayout->addStretch();
   connect(assocButton, &QPushButton::clicked, this, &OptionsDialog::setDefaultAssociation);
-  tabs->addTab(assoc, QStringLiteral("Associations"));
+  tabs->addTab(assoc, OptionsDialog::tr("Associations"));
 
   auto *languagePage = new QWidget(tabs);
   auto *languageForm = new QFormLayout(languagePage);
   configureDialogForm(languageForm);
   languageForm->setContentsMargins(14, 14, 14, 14);
   m_language = new QComboBox(languagePage);
-  m_language->addItem(QStringLiteral("System default"), QStringLiteral("system"));
-  m_language->addItem(QStringLiteral("English"), QStringLiteral("en"));
+  m_language->addItem(OptionsDialog::tr("System default"), QStringLiteral("system"));
+  m_language->addItem(OptionsDialog::tr("English"), QStringLiteral("en"));
   const QStringList translationDirs = {
       QApplication::applicationDirPath() + QStringLiteral("/translations"),
       QApplication::applicationDirPath() + QStringLiteral("/../share/7ziplx/translations"),
@@ -150,12 +163,12 @@ OptionsDialog::OptionsDialog(bool showHidden, bool showDots, bool showGrid, bool
   }
   const int langIndex = m_language->findData(language.isEmpty() ? QStringLiteral("system") : language);
   if (langIndex >= 0) m_language->setCurrentIndex(langIndex);
-  languageForm->addRow(QStringLiteral("Language:"), m_language);
-  auto *langNote = new QLabel(QStringLiteral("Language changes take effect after restarting 7zipLX. Translation files use the name 7ziplx_<code>.qm."), languagePage);
+  languageForm->addRow(OptionsDialog::tr("Language:"), m_language);
+  auto *langNote = new QLabel(OptionsDialog::tr("Language changes take effect after restarting 7zipLX. Translation files use the name 7ziplx_<code>.qm."), languagePage);
   langNote->setWordWrap(true);
   langNote->setObjectName(QStringLiteral("dialogSubheading"));
   languageForm->addRow(langNote);
-  tabs->addTab(languagePage, QStringLiteral("Language"));
+  tabs->addTab(languagePage, OptionsDialog::tr("Language"));
 
   auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
   layout->addWidget(buttons);
@@ -171,6 +184,7 @@ QString OptionsDialog::viewerCommand() const { return m_viewer->text().trimmed()
 QString OptionsDialog::editorCommand() const { return m_editor->text().trimmed(); }
 QString OptionsDialog::diffCommand() const { return m_diff->text().trimmed(); }
 QString OptionsDialog::language() const { return m_language->currentData().toString(); }
+QString OptionsDialog::theme() const { return m_theme->currentData().toString(); }
 
 void OptionsDialog::setDefaultAssociation()
 {
@@ -189,12 +203,12 @@ void OptionsDialog::setDefaultAssociation()
       failed << mime;
   }
   if (failed.isEmpty())
-    MessageDialog::show(this, QStringLiteral("Associations"), QStringLiteral("Associations"),
-                        QStringLiteral("Requested default handlers. The desktop file must be installed for this to take effect."),
+    MessageDialog::show(this, OptionsDialog::tr("Associations"), OptionsDialog::tr("Associations"),
+                        OptionsDialog::tr("Requested default handlers. The desktop file must be installed for this to take effect."),
                         MessageDialog::Kind::Information);
   else
-    MessageDialog::show(this, QStringLiteral("Associations"), QStringLiteral("Associations"),
-                        QStringLiteral("Could not run xdg-mime for: %1").arg(failed.join(QStringLiteral(", "))),
+    MessageDialog::show(this, OptionsDialog::tr("Associations"), OptionsDialog::tr("Associations"),
+                        OptionsDialog::tr("Could not run xdg-mime for: %1").arg(failed.join(QStringLiteral(", "))),
                         MessageDialog::Kind::Warning);
 }
 

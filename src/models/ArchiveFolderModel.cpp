@@ -120,13 +120,13 @@ QVariant ArchiveFolderModel::data(const QModelIndex &index, int role) const
     switch (index.column())
     {
       case ColumnName: return e.name;
-      case ColumnSize: return e.isDir ? QStringLiteral("<DIR>") : QLocale().formattedDataSize(qint64(e.size), 1, QLocale::DataSizeTraditionalFormat);
+      case ColumnSize: return e.isDir ? ArchiveFolderModel::tr("<DIR>") : QLocale().formattedDataSize(qint64(e.size), 1, QLocale::DataSizeTraditionalFormat);
       case ColumnPacked: return e.packedSize ? QLocale().formattedDataSize(qint64(e.packedSize), 1, QLocale::DataSizeTraditionalFormat) : QString();
       case ColumnModified: return e.modified.isValid() ? QLocale().toString(e.modified, QLocale::ShortFormat) : QString();
       case ColumnAttributes: return QStringLiteral("0x%1").arg(e.attrib, 8, 16, QLatin1Char('0'));
-      case ColumnCrc: return e.hasCrc ? QStringLiteral("%1").arg(e.crc, 8, 16, QLatin1Char('0')) : QString();
+      case ColumnCrc: return e.hasCrc ? ArchiveFolderModel::tr("%1").arg(e.crc, 8, 16, QLatin1Char('0')) : QString();
       case ColumnMethod: return e.method;
-      case ColumnEncrypted: return e.isEncrypted ? QStringLiteral("Yes") : QString();
+      case ColumnEncrypted: return e.isEncrypted ? ArchiveFolderModel::tr("Yes") : QString();
     }
   }
   else if (role == Qt::DecorationRole && index.column() == ColumnName)
@@ -164,14 +164,14 @@ QVariant ArchiveFolderModel::headerData(int section, Qt::Orientation orientation
   if (orientation != Qt::Horizontal || role != Qt::DisplayRole) return QVariant();
   switch (section)
   {
-    case ColumnName: return QStringLiteral("Name");
-    case ColumnSize: return QStringLiteral("Size");
-    case ColumnPacked: return QStringLiteral("Packed");
-    case ColumnModified: return QStringLiteral("Modified");
-    case ColumnAttributes: return QStringLiteral("Attributes");
-    case ColumnCrc: return QStringLiteral("CRC");
-    case ColumnMethod: return QStringLiteral("Method");
-    case ColumnEncrypted: return QStringLiteral("Encrypted");
+    case ColumnName: return ArchiveFolderModel::tr("Name");
+    case ColumnSize: return ArchiveFolderModel::tr("Size");
+    case ColumnPacked: return ArchiveFolderModel::tr("Packed");
+    case ColumnModified: return ArchiveFolderModel::tr("Modified");
+    case ColumnAttributes: return ArchiveFolderModel::tr("Attributes");
+    case ColumnCrc: return ArchiveFolderModel::tr("CRC");
+    case ColumnMethod: return ArchiveFolderModel::tr("Method");
+    case ColumnEncrypted: return ArchiveFolderModel::tr("Encrypted");
     default: return QVariant();
   }
 }

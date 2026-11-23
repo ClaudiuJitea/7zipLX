@@ -23,6 +23,30 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "debug-asan",
+      "displayName": "Debug with ASan + UBSan",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-asan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "ON",
+        "CMAKE_C_FLAGS": "-fsanitize=address,undefined -fno-sanitize=alignment -fno-omit-frame-pointer",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-sanitize=alignment -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined",
+        "CMAKE_SHARED_LINKER_FLAGS": "-fsanitize=address,undefined"
+      }
+    },
+    {
+      "name": "release-asm",
+      "displayName": "Release with x86-64 assembly",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-release-asm",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "SEVENZIP_BUILD_ASM": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -33,6 +57,14 @@
     {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "debug-asan",
+      "configurePreset": "debug-asan"
+    },
+    {
+      "name": "release-asm",
+      "configurePreset": "release-asm"
     }
   ]
 }

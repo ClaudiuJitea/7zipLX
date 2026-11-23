@@ -1,4 +1,4 @@
-.TH 7ZIPLX 1 "2026-11-22" "7zipLX 0.4.0" "User Commands"
+.TH 7ZIPLX 1 "2026-11-23" "7zipLX 0.5.0" "User Commands"
 .SH NAME
 7ziplx \- native Linux GUI for the 7-Zip archive engine
 .SH SYNOPSIS
@@ -6,9 +6,9 @@
 .RI [ archive ]
 .SH DESCRIPTION
 .B 7ziplx
-is a two-panel archive manager built with Qt 6. It uses the portable 7-Zip
-engine for archive formats, compression, extraction, testing, hashing and
-archive editing.
+is a single-pane archive manager with an optional second pane (F9), built with
+Qt 6. It uses the portable 7-Zip engine for archive formats, compression,
+extraction, testing, hashing and archive editing.
 .PP
 When
 .I archive
@@ -20,6 +20,23 @@ Show command-line help.
 .TP
 .B \-\-version
 Show the application version.
+.TP
+.B \-\-extract-here
+Extract each positional archive into its own folder and exit without opening
+the main window.
+.TP
+.BI \-\-extract-to " directory"
+Extract the positional archives into \fIdirectory\fR and exit.
+.TP
+.B \-\-compress
+Compress each positional file or folder to a sibling \fIname\fR.7z archive and
+exit.
+.TP
+.BI \-\-compress-to " archive"
+Compress all positional paths into \fIarchive\fR and exit.
+.TP
+.B \-\-overwrite
+Do not ask before replacing an existing archive in command-line mode.
 .SH FILES
 .TP
 .I ~/.config/7zipLX/7zipLX.conf
