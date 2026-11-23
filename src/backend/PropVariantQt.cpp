@@ -20,7 +20,7 @@ QDateTime fileTimeToDateTime(const FILETIME &ft)
   if (v == 0)
     return QDateTime();
   const qint64 msecs = qint64(v / 10000ULL) - 11644473600000LL;
-  QDateTime dt = QDateTime::fromMSecsSinceEpoch(msecs, QTimeZone::UTC);
+  QDateTime dt = QDateTime::fromMSecsSinceEpoch(msecs, QTimeZone(QByteArrayLiteral("UTC")));
   return dt.toLocalTime();
 }
 
