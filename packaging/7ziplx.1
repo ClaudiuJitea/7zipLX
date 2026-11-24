@@ -1,9 +1,9 @@
-.TH 7ZIPLX 1 "2026-11-23" "7zipLX 0.5.2" "User Commands"
+.TH 7ZIPLX 1 "2026-11-24" "7zipLX 0.5.3" "User Commands"
 .SH NAME
 7ziplx \- native Linux GUI for the 7-Zip archive engine
 .SH SYNOPSIS
 .B 7ziplx
-.RI [ archive ]
+.RI [ options ] " " [ path ...]
 .SH DESCRIPTION
 .B 7ziplx
 is a single-pane archive manager with an optional second pane (F9), built with
@@ -22,25 +22,52 @@ Show command-line help.
 Show the application version.
 .TP
 .B \-\-extract-here
-Extract each positional archive into its own folder and exit without opening
-the main window.
+Extract each archive into the folder that contains it, then exit without
+opening the main window.
+.TP
+.B \-\-extract-to-folder
+Extract each archive into a new folder named after it (\fIphotos.tar.gz\fR
+goes into \fIphotos/\fR).
 .TP
 .BI \-\-extract-to " directory"
-Extract the positional archives into \fIdirectory\fR and exit.
+Extract the archives into \fIdirectory\fR.
+.TP
+.B \-\-extract
+Show the Extract dialog for the archives.
+.TP
+.B \-\-test
+Test the archives and report the result.
 .TP
 .B \-\-compress
-Compress each positional file or folder to a sibling \fIname\fR.7z archive and
-exit.
+Add all inputs to one archive next to them, named after the single input or,
+for several inputs, after their folder.  An existing archive is updated after
+asking.
+.TP
+.BI \-\-format " 7z|zip"
+Archive format for \fB\-\-compress\fR (default 7z).
 .TP
 .BI \-\-compress-to " archive"
-Compress all positional paths into \fIarchive\fR and exit.
+Add all inputs to \fIarchive\fR.
+.TP
+.B \-\-add
+Show the Add to Archive dialog for the inputs.
 .TP
 .B \-\-overwrite
-Do not ask before replacing an existing archive in command-line mode.
+Replace an existing archive instead of adding to it.
+.TP
+.B \-\-install-menus
+Add the 7zipLX actions to the GNOME desktop and Files \fBScripts\fR menu
+(\fI~/.local/share/nautilus/scripts/7zipLX\fR) and exit.
+.TP
+.B \-\-remove-menus
+Remove those actions and exit.
 .SH FILES
 .TP
 .I ~/.config/7zipLX/7zipLX.conf
 Persisted window, panel and tool settings.
+.TP
+.I /usr/share/nautilus-python/extensions/7ziplx.py
+The 7-Zip submenu of GNOME Files (needs python3-nautilus).
 .TP
 .I /usr/share/7ziplx/translations
 Optional compiled Qt translation catalogs.

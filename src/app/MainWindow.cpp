@@ -7,6 +7,7 @@
 #include "ui/dialogs/OptionsDialog.h"
 #include "ui/dialogs/AboutDialog.h"
 #include "ui/dialogs/BenchmarkDialog.h"
+#include "backend/ArchiveTypes.h"
 #include "backend/BenchmarkOperation.h"
 #include "backend/HashOperation.h"
 #include "models/ArchiveFolderModel.h"
@@ -18,12 +19,15 @@
 #include "backend/LocalFileOperation.h"
 #include "backend/SevenZipEngine.h"
 #include "ui/Theme.h"
+#include "DesktopIntegration.h"
 #include "ExternalToolController.h"
 #include "OperationRunner.h"
 #include "HashController.h"
 #include "TransferController.h"
 
 #include <QAction>
+#include <QKeyEvent>
+#include <QLineEdit>
 #include <QApplication>
 #include <QCloseEvent>
 #include <QEvent>
@@ -58,22 +62,61 @@
 #include <QTableView>
 #include <QThread>
 #include <QTimer>
+#include <QStyleOptionToolButton>
+#include <QStylePainter>
 #include <QToolBar>
+#include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
 
 static bool removeLocalPath(const QString &path);
 
+namespace {
+
+// QToolButton left-aligns its icon and text; this one centers them so a row
+// of equal-width toolbar buttons reads evenly.
+class CenteredToolButton : public QToolButton
+{
+public:
+  using QToolButton::QToolButton;
+
+protected:
+  void paintEvent(QPaintEvent *) override
+  {
+    QStylePainter painter(this);
+    QStyleOptionToolButton opt;
+    initStyleOption(&opt);
+    QStyleOptionToolButton panel = opt;
+    panel.text.clear();
+    panel.icon = QIcon();
+    painter.drawComplexControl(QStyle::CC_ToolButton, panel);
+    // The label is laid out inside the stylesheet's padding + border
+    // (10px + 1px a side, see Theme.cpp's QToolBar#mainToolbar QToolButton).
+    constexpr int kInset = 11;
+    const int content = opt.iconSize.width() + 4 + opt.fontMetrics.horizontalAdvance(opt.text);
+    const int natural = qMin(width(), content + 2 * kInset);
+    opt.rect = QRect((width() - natural) / 2, 0, natural, height());
+    painter.drawControl(QStyle::CE_ToolButtonLabel, opt);
+  }
+};
+
+} // namespace
+
+// Returns why a single file or folder name cannot be used, or an empty string.
+static QString invalidItemName(const QString &name)
+{
+  if (name.trimmed().isEmpty())
+    return MainWindow::tr("The name cannot be empty.");
+  if (name == QLatin1String(".") || name == QLatin1String(".."))
+    return MainWindow::tr("\"%1\" is a reserved name.").arg(name);
+  if (name.contains(QLatin1Char('/')) || name.contains(QChar(0)))
+    return MainWindow::tr("A name cannot contain \"/\".");
+  return QString();
+}
+
 static bool isArchiveFile(const QString &path)
 {
-  static const QStringList exts = {
-      QStringLiteral("7z"), QStringLiteral("zip"), QStringLiteral("rar"),
-      QStringLiteral("tar"), QStringLiteral("gz"), QStringLiteral("tgz"),
-      QStringLiteral("bz2"), QStringLiteral("xz"), QStringLiteral("cab"),
-      QStringLiteral("iso"), QStringLiteral("wim"), QStringLiteral("arj"),
-      QStringLiteral("lzh"), QStringLiteral("zst"), QStringLiteral("lzma"),
-      QStringLiteral("z")};
-  return exts.contains(QFileInfo(path).suffix().toLower());
+  return isArchiveFileName(path);
 }
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
@@ -110,7 +153,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
   setCentralWidget(central);
 
   m_status = new QLabel(MainWindow::tr("Ready"), this);
+  m_status->setObjectName(QStringLiteral("windowStatus"));
   statusBar()->addWidget(m_status, 1);
+  statusBar()->setSizeGripEnabled(false);
 
   auto *fileMenu = menuBar()->addMenu(MainWindow::tr("&File"));
   m_openAction = fileMenu->addAction(MainWindow::tr("&Open Archive..."), this, &MainWindow::openArchiveDialog);
@@ -134,7 +179,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
   editMenu->addAction(MainWindow::tr("&Copy"), this, &MainWindow::clipboardCopy)->setShortcut(QKeySequence::Copy);
   editMenu->addAction(MainWindow::tr("&Paste"), this, &MainWindow::clipboardPaste)->setShortcut(QKeySequence::Paste);
   editMenu->addSeparator();
-  editMenu->addAction(MainWindow::tr("&Refresh"), this, &MainWindow::refreshActive);
+  editMenu->addAction(MainWindow::tr("&Refresh"), this, &MainWindow::refreshActive)->setShortcut(QKeySequence(QStringLiteral("Ctrl+R")));
   editMenu->addSeparator();
   editMenu->addAction(MainWindow::tr("&Rename..."), this, &MainWindow::renameSelected)->setShortcut(QKeySequence(Qt::Key_F2));
   editMenu->addAction(MainWindow::tr("&Copy to Other Panel"), this, &MainWindow::copyToOtherPanel)->setShortcut(QKeySequence(Qt::Key_F5));
@@ -164,7 +209,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
   m_twoPanelsAction->setShortcut(QKeySequence(Qt::Key_F9));
   connect(m_twoPanelsAction, &QAction::toggled, this, &MainWindow::setTwoPanels);
   viewMenu->addSeparator();
-  viewMenu->addAction(MainWindow::tr("&Up One Level"), this, &MainWindow::goUp)->setShortcut(QKeySequence(QStringLiteral("Backspace")));
+  viewMenu->addAction(MainWindow::tr("&Up One Level"), this, &MainWindow::goUp)->setShortcut(QKeySequence(QStringLiteral("Alt+Up")));
   viewMenu->addAction(MainWindow::tr("&Computer"), this, &MainWindow::showRoot);
   viewMenu->addSeparator();
   m_showHiddenAction = viewMenu->addAction(MainWindow::tr("Show &Hidden Files"));
@@ -220,19 +265,84 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
   m_extractAction->setIcon(Theme::toolbarIcon(QStringLiteral("extract.svg")));
   m_testAction->setIcon(Theme::toolbarIcon(QStringLiteral("test.svg")));
 
+  auto *logo = new QLabel(toolbar);
+  logo->setObjectName(QStringLiteral("brandLogo"));
+  logo->setPixmap(QIcon(QStringLiteral(":/icons/7ziplx-48.png")).pixmap(QSize(22, 22)));
+  toolbar->addWidget(logo);
   auto *brand = new QLabel(QStringLiteral("7zipLX"), toolbar);
   brand->setObjectName(QStringLiteral("brand"));
   toolbar->addWidget(brand);
   toolbar->addSeparator();
-  toolbar->addAction(m_openAction);
+  m_addAction->setText(MainWindow::tr("Add"));
+  m_addAction->setToolTip(MainWindow::tr("Add the selection to an archive (Alt+A)"));
+  m_extractAction->setText(MainWindow::tr("Extract"));
+  m_extractAction->setToolTip(MainWindow::tr("Extract from the open archive (Ctrl+E)"));
+  m_testAction->setText(MainWindow::tr("Test"));
+  m_testAction->setToolTip(MainWindow::tr("Check the open archive for errors (Ctrl+T)"));
+  m_openAction->setText(MainWindow::tr("Open"));
+  m_openAction->setToolTip(MainWindow::tr("Open an archive (Ctrl+O)"));
+  QList<QToolButton *> actionButtons;
+  auto addActionButton = [&](QAction *action) {
+    auto *button = new CenteredToolButton(toolbar);
+    button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    button->setIconSize(toolbar->iconSize());
+    button->setFocusPolicy(Qt::NoFocus);
+    button->setDefaultAction(action);
+    toolbar->addWidget(button);
+    actionButtons.append(button);
+  };
+  addActionButton(m_addAction);
+  addActionButton(m_extractAction);
+  addActionButton(m_testAction);
   toolbar->addSeparator();
-  toolbar->addAction(m_addAction);
-  toolbar->addAction(m_extractAction);
-  toolbar->addAction(m_testAction);
-  toolbar->addSeparator();
-  m_upAction = toolbar->addAction(MainWindow::tr("Up"), this, &MainWindow::goUp);
-  m_refreshAction = toolbar->addAction(MainWindow::tr("Refresh"), this, &MainWindow::refreshActive);
+  addActionButton(m_openAction);
+  int buttonWidth = 0;
+  for (QToolButton *button : std::as_const(actionButtons))
+    buttonWidth = qMax(buttonWidth, button->sizeHint().width());
+  for (QToolButton *button : std::as_const(actionButtons))
+    button->setFixedWidth(buttonWidth);
+  // Kept for the menus and shortcuts; every panel has its own Up/Refresh.
+  m_upAction = new QAction(MainWindow::tr("Up"), this);
+  connect(m_upAction, &QAction::triggered, this, &MainWindow::goUp);
+  m_refreshAction = new QAction(MainWindow::tr("Refresh"), this);
+  connect(m_refreshAction, &QAction::triggered, this, &MainWindow::refreshActive);
 
+  auto *spacer = new QWidget(toolbar);
+  spacer->setObjectName(QStringLiteral("toolbarSpacer"));
+  spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+  spacer->setAttribute(Qt::WA_TransparentForMouseEvents);
+  toolbar->addWidget(spacer);
+  m_filter = new QLineEdit(toolbar);
+  m_filter->setObjectName(QStringLiteral("toolbarFilter"));
+  m_filter->setPlaceholderText(MainWindow::tr("Filter this folder  (Ctrl+F)"));
+  m_filter->setClearButtonEnabled(true);
+  m_filter->setFixedWidth(250);
+  m_filter->installEventFilter(this);
+  toolbar->addWidget(m_filter);
+  connect(m_filter, &QLineEdit::textChanged, this, [this](const QString &text) {
+    if (m_active)
+      m_active->setNameFilter(text);
+  });
+  auto *findShortcut = new QAction(this);
+  findShortcut->setShortcut(QKeySequence::Find);
+  connect(findShortcut, &QAction::triggered, this, [this] {
+    m_filter->setFocus(Qt::ShortcutFocusReason);
+    m_filter->selectAll();
+  });
+  addAction(findShortcut);
+  m_twoPanelsAction->setToolTip(MainWindow::tr("Show a second panel (F9)"));
+  toolbar->addAction(m_twoPanelsAction);
+
+  for (FilePanel *panel : {m_left, m_right})
+  {
+    connect(panel, &FilePanel::nameFilterChanged, this, [this, panel](const QString &text) {
+      if (m_active == panel && m_filter && m_filter->text() != text)
+      {
+        QSignalBlocker block(m_filter);
+        m_filter->setText(text);
+      }
+    });
+  }
   connect(m_left, &FilePanel::activeRequested, this, [this] { setActivePanel(m_left); });
   connect(m_right, &FilePanel::activeRequested, this, [this] { setActivePanel(m_right); });
   connect(m_left, &FilePanel::openArchiveRequested, this, &MainWindow::openArchiveRequested);
@@ -257,11 +367,19 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
   };
   m_left->setDragReleaser(dragReleaser);
   m_right->setDragReleaser(dragReleaser);
-  connect(m_left, &FilePanel::pathChanged, this, [this](const QString &p) {
-    if (m_active == m_left) m_status->setText(p);
+  connect(m_left, &FilePanel::pathChanged, this, [this](const QString &) {
+    if (m_active == m_left)
+    {
+      updateWindowTitle();
+      updateActions(); // entering or leaving an archive changes what applies
+    }
   });
-  connect(m_right, &FilePanel::pathChanged, this, [this](const QString &p) {
-    if (m_active == m_right) m_status->setText(p);
+  connect(m_right, &FilePanel::pathChanged, this, [this](const QString &) {
+    if (m_active == m_right)
+    {
+      updateWindowTitle();
+      updateActions(); // entering or leaving an archive changes what applies
+    }
   });
 
   TransferContext transferContext;
@@ -393,8 +511,48 @@ void MainWindow::setActivePanel(FilePanel *panel)
     m_left->setActive(m_left == panel);
   if (m_right)
     m_right->setActive(m_right == panel);
-  m_status->setText(panel->displayPath());
+  if (m_filter && m_filter->text() != panel->nameFilter())
+  {
+    QSignalBlocker block(m_filter);
+    m_filter->setText(panel->nameFilter());
+  }
+  updateWindowTitle();
   updateActions();
+}
+
+void MainWindow::updateWindowTitle()
+{
+  if (!m_active)
+    return;
+  QString where = m_active->displayPath();
+  while (where.size() > 1 && where.endsWith(QLatin1Char('/')))
+    where.chop(1);
+  QString name = where.section(QLatin1Char('/'), -1);
+  if (m_active->mode() == FilePanel::RootMode)
+    name = MainWindow::tr("Computer");
+  if (name.isEmpty())
+    name = where;
+  setWindowTitle(name.isEmpty() ? QStringLiteral("7zipLX") : name + QStringLiteral(" \u2014 7zipLX"));
+}
+
+bool MainWindow::eventFilter(QObject *watched, QEvent *event)
+{
+  if (watched == m_filter && event->type() == QEvent::KeyPress)
+  {
+    auto *key = static_cast<QKeyEvent *>(event);
+    if (key->key() == Qt::Key_Escape)
+    {
+      m_filter->clear();
+      if (m_active) m_active->focusView();
+      return true;
+    }
+    if (key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter || key->key() == Qt::Key_Down)
+    {
+      if (m_active) m_active->focusView();
+      return true;
+    }
+  }
+  return QMainWindow::eventFilter(watched, event);
 }
 
 FilePanel *MainWindow::panelById(int id) const
@@ -577,7 +735,9 @@ void MainWindow::extractArchive()
     return;
   ExtractDialog dialog(this);
   dialog.setArchivePath(m_active->displayPath());
-  const QString archiveDir = QFileInfo(m_active->displayPath()).absolutePath();
+  // Next to the archive file on disk: displayPath() may end in a folder
+  // inside the archive, and a nested archive lives in a temporary folder.
+  const QString archiveDir = QFileInfo(m_active->rootArchivePath()).absolutePath();
   dialog.setDefaultOutputDir(archiveDir);
   if (dialog.exec() != QDialog::Accepted)
     return;
@@ -585,6 +745,8 @@ void MainWindow::extractArchive()
   ExtractOptions options = dialog.options();
   const QVector<int> selected = m_active->selectedArchiveRows();
   ArchiveSession *session = m_active->archiveModel()->session();
+  if (options.password.isEmpty())
+    options.password = session->password();
   const auto result = runOperation(MainWindow::tr("Extracting"),
                                    [session, selected, options](ProgressState *state, PromptDispatcher *prompts) {
                                      return session->extract(selected, options, state, prompts);
@@ -592,7 +754,19 @@ void MainWindow::extractArchive()
   if (!result.ok && !result.canceled)
     m_prompts->showError(MainWindow::tr("Extraction failed"), result.error);
   else if (result.ok)
-    m_status->setText(MainWindow::tr("Extracted %1 item(s)").arg(result.files));
+  {
+    m_status->setText(MainWindow::tr("Extracted %1 item(s) to %2").arg(result.files).arg(options.outputDir));
+    refreshPanelsShowing(options.outputDir);
+  }
+}
+
+void MainWindow::refreshPanelsShowing(const QString &dir)
+{
+  const QString wanted = QFileInfo(dir).absoluteFilePath();
+  for (FilePanel *panel : {m_left, m_right})
+    if (panel && !panel->isArchive() && panel->mode() == FilePanel::LocalMode &&
+        QFileInfo(panel->localPath()).absoluteFilePath() == wanted)
+      panel->refresh();
 }
 
 void MainWindow::testArchive()
@@ -617,10 +791,12 @@ void MainWindow::addToArchive()
 {
   if (!m_active || m_active->isArchive())
     return;
-  QStringList files = m_active->selectedLocalPaths();
-  if (files.isEmpty())
-    files << m_active->localPath();
-  CompressDialog dialog(files, m_active ? m_active->localPath() : QString(), this);
+  // With nothing selected the current folder is compressed next to itself,
+  // never into an archive inside the folder being read.
+  const QuickArchiveTarget target =
+      quickArchiveTarget(m_active->selectedLocalPaths(), m_active->localPath(), QStringLiteral("7z"));
+  const QStringList files = target.inputs;
+  CompressDialog dialog(files, QFileInfo(target.archivePath).absolutePath(), this);
   if (dialog.exec() != QDialog::Accepted)
     return;
   const CompressOptions options = dialog.options();
@@ -633,7 +809,7 @@ void MainWindow::addToArchive()
   else if (result.ok)
   {
     m_status->setText(MainWindow::tr("Created %1").arg(options.archivePath));
-    m_active->refresh();
+    showCreatedArchive(options.archivePath);
   }
 }
 
@@ -641,8 +817,7 @@ void MainWindow::goUp()
 {
   if (m_active && !m_active->goUp())
     m_status->setText(MainWindow::tr("Already at the top"));
-  else if (m_active)
-    m_status->setText(m_active->displayPath());
+  updateActions();
 }
 
 void MainWindow::refreshActive()
@@ -828,39 +1003,26 @@ void MainWindow::splitFile()
     return;
   }
   const QString src = selected.first();
-  int mib = 1;
+  int mib = 100;
   if (!InputDialog::getInt(this, MainWindow::tr("Split File"), MainWindow::tr("Split File"),
-                           MainWindow::tr("Volume size (MiB):"), 1, 1024 * 64, 1, &mib))
+                           MainWindow::tr("Volume size (MiB):"), 1, 1024 * 64, mib, &mib))
     return;
-  QFile in(src);
-  if (!in.open(QIODevice::ReadOnly))
+  const qint64 volumeSize = qint64(mib) * 1024 * 1024;
+  const auto result = runOperation(MainWindow::tr("Splitting %1").arg(QFileInfo(src).fileName()),
+                                   [src, volumeSize](ProgressState *state, PromptDispatcher *) {
+                                     return ::splitFile(src, volumeSize, state);
+                                   });
+  if (!result.ok && !result.canceled)
   {
-    m_prompts->showError(MainWindow::tr("Split File"), MainWindow::tr("Cannot open the source file."));
+    m_prompts->showError(MainWindow::tr("Split File"), result.error);
     return;
   }
-  const qint64 chunk = qint64(mib) * 1024 * 1024;
-  int part = 1;
-  QStringList created;
-  QApplication::setOverrideCursor(Qt::WaitCursor);
-  while (!in.atEnd())
-  {
-    const QByteArray data = in.read(chunk);
-    if (data.isEmpty()) break;
-    const QString name = MainWindow::tr("%1.%2").arg(src).arg(part, 3, 10, QLatin1Char('0'));
-    QFile out(name);
-    if (!out.open(QIODevice::WriteOnly) || out.write(data) != data.size())
-    {
-      created << name;
-      QApplication::restoreOverrideCursor();
-      m_prompts->showError(MainWindow::tr("Split File"), MainWindow::tr("Cannot write volume: %1").arg(name));
-      return;
-    }
-    created << name;
-    ++part;
-  }
-  QApplication::restoreOverrideCursor();
-  m_status->setText(MainWindow::tr("Created %1 volume(s)").arg(created.size()));
   m_active->refresh();
+  if (result.ok)
+  {
+    m_status->setText(MainWindow::tr("Created %n volume(s)", nullptr, int(result.files)));
+    m_active->selectLocalPathsWhenLoaded({splitVolumeName(src, 1)});
+  }
 }
 
 void MainWindow::combineFiles()
@@ -874,41 +1036,29 @@ void MainWindow::combineFiles()
   }
   const QString first = selected.first();
   const QString base = first.left(first.size() - 4);
-  const QString outPath = QFileDialog::getSaveFileName(this, MainWindow::tr("Combine to"), base);
-  if (outPath.isEmpty()) return;
-  QFile out(outPath);
-  if (!out.open(QIODevice::WriteOnly))
+  QString outPath = base;
+  if (!InputDialog::getText(this, MainWindow::tr("Combine Files"), MainWindow::tr("Combine Files"),
+                            MainWindow::tr("Output file:"), &outPath) ||
+      outPath.trimmed().isEmpty())
+    return;
+  if (QFileInfo(outPath).isRelative())
+    outPath = QFileInfo(first).absolutePath() + QLatin1Char('/') + outPath;
+  const auto result = runOperation(MainWindow::tr("Combining files"),
+                                   [first, outPath](ProgressState *state, PromptDispatcher *) {
+                                     return ::combineFiles(first, outPath, state);
+                                   });
+  if (!result.ok && !result.canceled)
   {
-    m_prompts->showError(MainWindow::tr("Combine Files"), MainWindow::tr("Cannot create the output file."));
+    m_prompts->showError(MainWindow::tr("Combine Files"), result.error);
     return;
   }
-  QApplication::setOverrideCursor(Qt::WaitCursor);
-  for (int part = 1; ; ++part)
-  {
-    const QString name = MainWindow::tr("%1.%2").arg(base).arg(part, 3, 10, QLatin1Char('0'));
-    QFile in(name);
-    if (!in.exists()) break;
-    if (!in.open(QIODevice::ReadOnly))
-    {
-      QApplication::restoreOverrideCursor();
-      m_prompts->showError(MainWindow::tr("Combine Files"), MainWindow::tr("Cannot read volume: %1").arg(name));
-      return;
-    }
-    while (!in.atEnd())
-    {
-      const QByteArray data = in.read(1 << 20);
-      if (data.isEmpty()) break;
-      if (out.write(data) != data.size())
-      {
-        QApplication::restoreOverrideCursor();
-        m_prompts->showError(MainWindow::tr("Combine Files"), MainWindow::tr("Cannot write the output file."));
-        return;
-      }
-    }
-  }
-  QApplication::restoreOverrideCursor();
-  m_status->setText(MainWindow::tr("Combined to %1").arg(outPath));
   m_active->refresh();
+  if (result.ok)
+  {
+    m_status->setText(MainWindow::tr("Combined %n volume(s) into %1", nullptr, int(result.files)).arg(outPath));
+    if (QFileInfo(outPath).absolutePath() == QFileInfo(m_active->localPath()).absoluteFilePath())
+      m_active->selectLocalPathsWhenLoaded({outPath});
+  }
 }
 
 void MainWindow::renameSelected()
@@ -930,6 +1080,11 @@ void MainWindow::renameSelected()
                               MainWindow::tr("New name:"), &newName) ||
         newName.isEmpty() || newName == entry.name)
       return;
+    if (const QString why = invalidItemName(newName); !why.isEmpty())
+    {
+      m_prompts->showError(MainWindow::tr("Rename failed"), why);
+      return;
+    }
     ArchiveSession *session = m_active->archiveModel()->session();
     const auto result = runOperation(MainWindow::tr("Renaming item"),
                                      [session, row = rows.first(), newName](ProgressState *state, PromptDispatcher *prompts) {
@@ -955,12 +1110,25 @@ void MainWindow::renameSelected()
                             MainWindow::tr("New name:"), &newName) ||
       newName.isEmpty() || newName == fi.fileName())
     return;
+  if (const QString why = invalidItemName(newName); !why.isEmpty())
+  {
+    m_prompts->showError(MainWindow::tr("Rename failed"), why);
+    return;
+  }
   const QString dest = fi.absolutePath() + QLatin1Char('/') + newName;
+  if (QFileInfo::exists(dest) || QFileInfo(dest).isSymLink())
+  {
+    m_prompts->showError(MainWindow::tr("Rename failed"),
+                         MainWindow::tr("An item named \"%1\" already exists here.").arg(newName));
+    return;
+  }
   const bool renamed = fi.isDir() ? QDir().rename(fi.absoluteFilePath(), dest)
                                   : QFile::rename(fi.absoluteFilePath(), dest);
   if (!renamed)
     m_prompts->showError(MainWindow::tr("Rename failed"), MainWindow::tr("Cannot rename:\n%1").arg(fi.absoluteFilePath()));
   m_active->refresh();
+  if (renamed)
+    m_active->selectLocalPathsWhenLoaded({dest});
 }
 
 void MainWindow::deleteSelected()
@@ -991,30 +1159,68 @@ void MainWindow::deleteSelected()
   }
   const QStringList selected = m_active->selectedLocalPaths();
   if (selected.isEmpty()) return;
-  if (!m_prompts->confirm(MainWindow::tr("Delete"),
-                          MainWindow::tr("Delete %1 selected item(s)?\n\nThey will be moved to the trash when possible.").arg(selected.size()),
-                          true))
+  if (!m_prompts->confirm(MainWindow::tr("Move to Trash"),
+                          MainWindow::tr("Move %n selected item(s) to the trash?", nullptr, int(selected.size()))))
     return;
-  const auto result = runOperation(MainWindow::tr("Deleting"),
-                                   [selected](ProgressState *, PromptDispatcher *) {
-                                     OperationResult out;
-                                     out.ok = true;
-                                     QStringList failed;
-                                     for (const QString &path : selected)
-                                     {
-                                       if (!QFile::moveToTrash(path) && !removeLocalPath(path))
-                                         failed << path;
-                                     }
-                                     if (!failed.isEmpty())
-                                     {
-                                       out.ok = false;
-                                       out.error = MainWindow::tr("Delete failed") + QStringLiteral(":\n") +
-                                                   failed.join(QLatin1Char('\n'));
-                                     }
-                                     return out;
-                                   });
-  if (!result.ok && !result.canceled)
-    m_prompts->showError(MainWindow::tr("Delete failed"), result.error);
+  // Trash first.  Anything the trash cannot take (another filesystem, no
+  // trash support) is only deleted permanently after asking.
+  QStringList notTrashed;
+  const auto trashed = runOperation(MainWindow::tr("Moving to trash"),
+                                    [selected, &notTrashed](ProgressState *state, PromptDispatcher *) {
+                                      OperationResult out;
+                                      out.ok = true;
+                                      for (const QString &path : selected)
+                                      {
+                                        if (state && state->isCanceled())
+                                        {
+                                          out.ok = false;
+                                          out.canceled = true;
+                                          break;
+                                        }
+                                        if (QFile::moveToTrash(path))
+                                          ++out.files;
+                                        else
+                                          notTrashed << path;
+                                      }
+                                      return out;
+                                    });
+  if (!notTrashed.isEmpty() && !trashed.canceled)
+  {
+    QStringList names;
+    for (const QString &path : notTrashed.mid(0, 8))
+      names << QFileInfo(path).fileName();
+    if (notTrashed.size() > 8)
+      names << MainWindow::tr("... and %n more", nullptr, int(notTrashed.size() - 8));
+    if (m_prompts->confirm(MainWindow::tr("Delete permanently"),
+                           MainWindow::tr("%n item(s) cannot be moved to the trash:", nullptr, int(notTrashed.size())) +
+                               QStringLiteral("\n\n") + names.join(QLatin1Char('\n')) + QStringLiteral("\n\n") +
+                               MainWindow::tr("Delete them permanently? This cannot be undone."),
+                           true))
+    {
+      const auto removed = runOperation(MainWindow::tr("Deleting"),
+                                        [notTrashed](ProgressState *, PromptDispatcher *) {
+                                          OperationResult out;
+                                          out.ok = true;
+                                          QStringList failed;
+                                          for (const QString &path : notTrashed)
+                                            if (!removeLocalPath(path))
+                                              failed << path;
+                                          if (!failed.isEmpty())
+                                          {
+                                            out.ok = false;
+                                            out.error = MainWindow::tr("Cannot delete:") + QStringLiteral("\n") +
+                                                        failed.join(QLatin1Char('\n'));
+                                          }
+                                          return out;
+                                        });
+      if (!removed.ok && !removed.canceled)
+        m_prompts->showError(MainWindow::tr("Delete failed"), removed.error);
+    }
+  }
+  else if (trashed.ok)
+  {
+    m_status->setText(MainWindow::tr("Moved %n item(s) to the trash", nullptr, int(trashed.files)));
+  }
   m_active->refresh();
 }
 
@@ -1061,6 +1267,11 @@ void MainWindow::createFolder()
     if (!InputDialog::getText(this, MainWindow::tr("Create Folder"), MainWindow::tr("Create Folder"),
                               MainWindow::tr("Folder name:"), &name) || name.isEmpty())
       return;
+    if (const QString why = invalidItemName(name); !why.isEmpty())
+    {
+      m_prompts->showError(MainWindow::tr("Create Folder"), why);
+      return;
+    }
     ArchiveSession *session = m_active->archiveModel()->session();
     const auto result = runOperation(MainWindow::tr("Creating folder"),
                                      [session, name](ProgressState *state, PromptDispatcher *prompts) {
@@ -1078,9 +1289,25 @@ void MainWindow::createFolder()
   if (!InputDialog::getText(this, MainWindow::tr("Create Folder"), MainWindow::tr("Create Folder"),
                             MainWindow::tr("Folder name:"), &name) || name.isEmpty())
     return;
+  if (const QString why = invalidItemName(name); !why.isEmpty())
+  {
+    m_prompts->showError(MainWindow::tr("Create Folder"), why);
+    return;
+  }
+  const QString folder = m_active->localPath() + QLatin1Char('/') + name;
+  if (QFileInfo::exists(folder))
+  {
+    m_prompts->showError(MainWindow::tr("Create Folder"),
+                         MainWindow::tr("An item named \"%1\" already exists here.").arg(name));
+    return;
+  }
   if (!QDir(m_active->localPath()).mkdir(name))
+  {
     m_prompts->showError(MainWindow::tr("Create Folder"), MainWindow::tr("Cannot create folder."));
+    return;
+  }
   m_active->refresh();
+  m_active->selectLocalPathsWhenLoaded({folder});
 }
 
 void MainWindow::openExternalView()
@@ -1114,7 +1341,7 @@ void MainWindow::editComment()
   }
   if (!ensureWritableArchive(MainWindow::tr("Comment")))
     return;
-  const int row = m_active->currentRow();
+  const int row = m_active->currentArchiveItem();
   if (row < 0) return;
   const ArchiveEntryInfo &entry = m_active->archiveModel()->entry(row);
   QString comment = entry.comment;
@@ -1163,7 +1390,7 @@ void MainWindow::createLink()
     return;
   }
   bool created = false;
-  if (type.startsWith(QStringLiteral("Symbolic")))
+  if (type == types.first())
     created = QFile::link(source.absoluteFilePath(), linkPath);
   else
   {
@@ -1183,10 +1410,48 @@ void MainWindow::createFile()
   if (!InputDialog::getText(this, MainWindow::tr("Create File"), MainWindow::tr("Create File"),
                             MainWindow::tr("File name:"), &name) || name.isEmpty())
     return;
-  QFile f(m_active->localPath() + QLatin1Char('/') + name);
-  if (!f.open(QIODevice::WriteOnly))
-    m_prompts->showError(MainWindow::tr("Create File"), MainWindow::tr("Cannot create file."));
+  if (const QString why = invalidItemName(name); !why.isEmpty())
+  {
+    m_prompts->showError(MainWindow::tr("Create File"), why);
+    return;
+  }
+  const QString path = m_active->localPath() + QLatin1Char('/') + name;
+  QFile f(path);
+  // NewOnly: never truncate a file that already has this name.
+  if (!f.open(QIODevice::WriteOnly | QIODevice::NewOnly))
+  {
+    m_prompts->showError(MainWindow::tr("Create File"),
+                         QFileInfo::exists(path)
+                             ? MainWindow::tr("An item named \"%1\" already exists here.").arg(name)
+                             : MainWindow::tr("Cannot create file."));
+    return;
+  }
+  f.close();
   m_active->refresh();
+  m_active->selectLocalPathsWhenLoaded({path});
+}
+
+static QString permissionString(QFileDevice::Permissions p, bool dir)
+{
+  QString out = dir ? QStringLiteral("d") : QStringLiteral("-");
+  out += (p & QFileDevice::ReadOwner) ? QLatin1Char('r') : QLatin1Char('-');
+  out += (p & QFileDevice::WriteOwner) ? QLatin1Char('w') : QLatin1Char('-');
+  out += (p & QFileDevice::ExeOwner) ? QLatin1Char('x') : QLatin1Char('-');
+  out += (p & QFileDevice::ReadGroup) ? QLatin1Char('r') : QLatin1Char('-');
+  out += (p & QFileDevice::WriteGroup) ? QLatin1Char('w') : QLatin1Char('-');
+  out += (p & QFileDevice::ExeGroup) ? QLatin1Char('x') : QLatin1Char('-');
+  out += (p & QFileDevice::ReadOther) ? QLatin1Char('r') : QLatin1Char('-');
+  out += (p & QFileDevice::WriteOther) ? QLatin1Char('w') : QLatin1Char('-');
+  out += (p & QFileDevice::ExeOther) ? QLatin1Char('x') : QLatin1Char('-');
+  return out;
+}
+
+static QString sizeWithBytes(quint64 bytes)
+{
+  const QString human = QLocale().formattedDataSize(qint64(bytes), 1, QLocale::DataSizeTraditionalFormat);
+  if (bytes < 1024)
+    return human;
+  return MainWindow::tr("%1 (%2 bytes)").arg(human, QLocale().toString(bytes));
 }
 
 void MainWindow::showProperties()
@@ -1194,30 +1459,60 @@ void MainWindow::showProperties()
   if (!m_active) return;
   if (m_active->isArchive())
   {
-    const int row = m_active->currentRow();
-    if (row >= 0)
+    const int row = m_active->currentArchiveItem();
+    if (row < 0) return;
+    const ArchiveEntryInfo &e = m_active->archiveModel()->entry(row);
+    QStringList lines;
+    lines << MainWindow::tr("Name: %1").arg(e.name);
+    lines << MainWindow::tr("Path in archive: %1").arg(e.path.isEmpty() ? e.name : e.path);
+    lines << MainWindow::tr("Type: %1").arg(e.isDir ? MainWindow::tr("Folder") : MainWindow::tr("File"));
+    if (!e.isDir)
     {
-      const ArchiveEntryInfo &e = m_active->archiveModel()->entry(row);
-      m_prompts->showInfo(MainWindow::tr("Properties"),
-                          MainWindow::tr("Name: %1\nSize: %2\nModified: %3\nMethod: %4\nEncrypted: %5")
-                              .arg(e.name)
-                              .arg(e.size)
-                              .arg(QLocale().toString(e.modified, QLocale::ShortFormat))
-                              .arg(e.method)
-                              .arg(e.isEncrypted ? MainWindow::tr("yes") : MainWindow::tr("no")));
+      lines << MainWindow::tr("Size: %1").arg(sizeWithBytes(e.size));
+      if (e.packedSize)
+        lines << MainWindow::tr("Packed size: %1").arg(sizeWithBytes(e.packedSize));
     }
+    if (e.modified.isValid())
+      lines << MainWindow::tr("Modified: %1").arg(QLocale().toString(e.modified, QLocale::LongFormat));
+    if (!e.method.isEmpty())
+      lines << MainWindow::tr("Method: %1").arg(e.method);
+    if (e.hasCrc)
+      lines << MainWindow::tr("CRC: %1").arg(e.crc, 8, 16, QLatin1Char('0')).toUpper();
+    lines << MainWindow::tr("Encrypted: %1").arg(e.isEncrypted ? MainWindow::tr("Yes") : MainWindow::tr("No"));
+    if (!e.comment.isEmpty())
+      lines << MainWindow::tr("Comment: %1").arg(e.comment);
+    lines << MainWindow::tr("Archive: %1").arg(m_active->rootArchivePath());
+    m_prompts->showInfo(MainWindow::tr("Properties"), lines.join(QLatin1Char('\n')));
     return;
   }
   const QStringList selected = m_active->selectedLocalPaths();
   if (selected.size() != 1) return;
   const QFileInfo fi(selected.first());
-  m_prompts->showInfo(MainWindow::tr("Properties"),
-                      MainWindow::tr("Name: %1\nPath: %2\nType: %3\nSize: %4\nModified: %5\nPermissions: %6")
-                          .arg(fi.fileName(), fi.absoluteFilePath(),
-                               fi.isDir() ? MainWindow::tr("Folder") : MainWindow::tr("File"))
-                          .arg(QLocale().formattedDataSize(fi.size(), 1, QLocale::DataSizeTraditionalFormat))
-                          .arg(QLocale().toString(fi.lastModified(), QLocale::ShortFormat))
-                          .arg(QString::number(int(fi.permissions()), 16)));
+  QStringList lines;
+  lines << MainWindow::tr("Name: %1").arg(fi.fileName());
+  lines << MainWindow::tr("Location: %1").arg(fi.absolutePath());
+  if (fi.isSymLink())
+    lines << MainWindow::tr("Type: Link to %1").arg(fi.symLinkTarget());
+  else
+    lines << MainWindow::tr("Type: %1").arg(fi.isDir() ? MainWindow::tr("Folder")
+                                                       : (isArchiveFileName(fi.fileName())
+                                                              ? MainWindow::tr("Archive")
+                                                              : MainWindow::tr("File")));
+  if (fi.isDir())
+  {
+    const int count = int(QDir(fi.absoluteFilePath())
+                              .entryList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System)
+                              .size());
+    lines << MainWindow::tr("Contains: %n item(s)", nullptr, count);
+  }
+  else
+  {
+    lines << MainWindow::tr("Size: %1").arg(sizeWithBytes(quint64(fi.size())));
+  }
+  lines << MainWindow::tr("Modified: %1").arg(QLocale().toString(fi.lastModified(), QLocale::LongFormat));
+  lines << MainWindow::tr("Permissions: %1").arg(permissionString(fi.permissions(), fi.isDir()));
+  lines << MainWindow::tr("Owner: %1:%2").arg(fi.owner(), fi.group());
+  m_prompts->showInfo(MainWindow::tr("Properties"), lines.join(QLatin1Char('\n')));
 }
 
 void MainWindow::addFavorite()
@@ -1255,7 +1550,16 @@ void MainWindow::showOptions()
                        m_left && m_left->view()->showGrid(),
                        m_flatViewAction && m_flatViewAction->isChecked(),
                        viewer, editor, diff, language, theme, this);
+  const bool menus = settings.value(QStringLiteral("integration/fileManagerMenus"), true).toBool();
+  dialog.setFileManagerMenus(menus);
   if (dialog.exec() != QDialog::Accepted) return;
+  if (dialog.fileManagerMenus() != menus)
+  {
+    settings.setValue(QStringLiteral("integration/fileManagerMenus"), dialog.fileManagerMenus());
+    QString error;
+    if (!DesktopIntegration::syncFileManagerScripts(dialog.fileManagerMenus(), &error))
+      m_prompts->showError(MainWindow::tr("File manager menus"), error);
+  }
   if (m_showHiddenAction) m_showHiddenAction->setChecked(dialog.showHidden());
   if (m_showDotsAction) m_showDotsAction->setChecked(dialog.showDots());
   if (m_flatViewAction) m_flatViewAction->setChecked(dialog.flatView());
@@ -1307,17 +1611,10 @@ QStringList MainWindow::selectedLocalArchiveFiles() const
     if (row >= 0)
       candidates << m_active->localModel()->filePath(row);
   }
-  static const QStringList exts = {
-      QStringLiteral("7z"), QStringLiteral("zip"), QStringLiteral("rar"),
-      QStringLiteral("tar"), QStringLiteral("gz"), QStringLiteral("tgz"),
-      QStringLiteral("bz2"), QStringLiteral("xz"), QStringLiteral("cab"),
-      QStringLiteral("iso"), QStringLiteral("wim"), QStringLiteral("arj"),
-      QStringLiteral("lzh"), QStringLiteral("zst"), QStringLiteral("lzma"),
-      QStringLiteral("z")};
   for (const QString &path : candidates)
   {
     const QFileInfo fi(path);
-    if (fi.isFile() && exts.contains(fi.suffix().toLower()))
+    if (fi.isFile() && isArchiveFileName(fi.fileName()))
       result << fi.absoluteFilePath();
   }
   return result;
@@ -1328,7 +1625,13 @@ void MainWindow::openCurrentItem()
   if (!m_active) return;
   if (m_active->isArchive())
   {
-    const int row = m_active->currentRow();
+    if (m_active->isParentRow(m_active->currentRow()))
+    {
+      goUp();
+      updateActions();
+      return;
+    }
+    const int row = m_active->currentArchiveItem();
     if (row < 0) return;
     const ArchiveEntryInfo entry = m_active->archiveModel()->entry(row);
     if (entry.isDir)
@@ -1340,12 +1643,7 @@ void MainWindow::openCurrentItem()
       }
       return;
     }
-    const QStringList exts = {QStringLiteral("7z"), QStringLiteral("zip"), QStringLiteral("rar"),
-                              QStringLiteral("tar"), QStringLiteral("gz"), QStringLiteral("tgz"),
-                              QStringLiteral("bz2"), QStringLiteral("xz"), QStringLiteral("cab"),
-                              QStringLiteral("iso"), QStringLiteral("wim"), QStringLiteral("arj"),
-                              QStringLiteral("lzh"), QStringLiteral("zst")};
-    if (exts.contains(QFileInfo(entry.name).suffix().toLower()))
+    if (isArchiveFileName(entry.name))
       openNestedArchive(row);
     else
       openExternalView();
@@ -1404,7 +1702,7 @@ void MainWindow::openInside(const QString &formatHint)
 void MainWindow::openCurrentArchiveInside(const QString &formatHint)
 {
   if (!m_active || !m_active->isArchive()) return;
-  const int row = m_active->currentRow();
+  const int row = m_active->currentArchiveItem();
   if (row < 0) return;
   const ArchiveEntryInfo entry = m_active->archiveModel()->entry(row);
   if (entry.isDir)
@@ -1435,33 +1733,38 @@ void MainWindow::openOutside()
     m_prompts->showError(MainWindow::tr("Open Outside"), error);
 }
 
-void MainWindow::extractHere()
+void MainWindow::extractHere(bool toFolder)
 {
   if (!m_active) return;
   if (!m_active->isArchive())
   {
-    extractLocalArchives(false);
+    extractLocalArchives(toFolder ? LocalExtract::ToFolders : LocalExtract::Here);
     return;
   }
   ArchiveSession *session = m_active->archiveModel()->session();
   if (!session) return;
   const QVector<int> rows = m_active->selectedArchiveRows();
   ExtractOptions options;
-  options.outputDir = QFileInfo(session->archivePath()).absolutePath();
+  options.outputDir = QFileInfo(m_active->rootArchivePath()).absolutePath();
+  if (toFolder)
+    options.outputDir += QLatin1Char('/') + archiveFolderName(m_active->rootArchivePath());
   options.pathMode = 0;
   options.overwriteMode = 0;
   options.password = session->password();
-  const auto result = runOperation(MainWindow::tr("Extracting here"),
+  const auto result = runOperation(MainWindow::tr("Extracting"),
                                    [session, rows, options](ProgressState *state, PromptDispatcher *prompts) {
                                      return session->extract(rows, options, state, prompts);
                                    });
   if (!result.ok && !result.canceled)
     m_prompts->showError(MainWindow::tr("Extraction failed"), result.error);
   else if (result.ok)
-    m_status->setText(MainWindow::tr("Extracted %1 item(s) to the archive folder").arg(result.files));
+  {
+    m_status->setText(MainWindow::tr("Extracted %1 item(s) to %2").arg(result.files).arg(options.outputDir));
+    refreshPanelsShowing(QFileInfo(m_active->rootArchivePath()).absolutePath());
+  }
 }
 
-void MainWindow::extractLocalArchives(bool chooseDirectory)
+void MainWindow::extractLocalArchives(LocalExtract mode)
 {
   if (!m_active || m_active->isArchive()) return;
   const QStringList archives = selectedLocalArchiveFiles();
@@ -1470,48 +1773,80 @@ void MainWindow::extractLocalArchives(bool chooseDirectory)
     m_prompts->showInfo(MainWindow::tr("Extract"), MainWindow::tr("Select one or more archive files first."));
     return;
   }
-  QString outputDir = QFileInfo(archives.first()).absolutePath();
-  if (chooseDirectory)
-    outputDir = QFileDialog::getExistingDirectory(this, MainWindow::tr("Extract archives to"), outputDir);
-  if (outputDir.isEmpty()) return;
+  ExtractOptions base;
+  base.outputDir = QFileInfo(archives.first()).absolutePath();
+  base.pathMode = 0;
+  base.overwriteMode = 0;
+  if (mode == LocalExtract::Dialog)
+  {
+    ExtractDialog dialog(this);
+    dialog.setArchivePath(archives.size() == 1
+        ? archives.first()
+        : MainWindow::tr("%n archive(s)", nullptr, int(archives.size())));
+    dialog.setDefaultOutputDir(archives.size() == 1
+        ? base.outputDir + QLatin1Char('/') + archiveFolderName(archives.first())
+        : base.outputDir);
+    if (dialog.exec() != QDialog::Accepted)
+      return;
+    base = dialog.options();
+  }
+  if (base.outputDir.isEmpty()) return;
+  const bool toFolders = mode == LocalExtract::ToFolders;
   const auto result = runOperation(MainWindow::tr("Extracting archives"),
-                                   [archives, outputDir](ProgressState *state, PromptDispatcher *prompts) {
+                                   [archives, base, toFolders](ProgressState *state, PromptDispatcher *prompts) {
                                      OperationResult total;
                                      total.ok = true;
+                                     QStringList errors;
                                      for (const QString &path : archives)
                                      {
-                                       ArchiveSession session;
-                                       QString openError;
-                                       if (!session.open(path, QString(), state, prompts, &openError))
+                                       if (state && state->isCanceled())
                                        {
                                          total.ok = false;
-                                         total.error = openError;
+                                         total.canceled = true;
+                                         break;
+                                       }
+                                       ArchiveSession session;
+                                       QString openError;
+                                       if (!session.open(path, QString(), state, prompts, &openError, base.password))
+                                       {
+                                         total.ok = false;
+                                         errors << QFileInfo(path).fileName() + QStringLiteral(": ") + openError;
                                          continue;
                                        }
-                                       ExtractOptions eo;
-                                       eo.outputDir = outputDir;
-                                       eo.pathMode = 0;
-                                       eo.overwriteMode = 0;
-                                       eo.password = session.password();
+                                       ExtractOptions eo = base;
+                                       if (toFolders)
+                                         eo.outputDir = QFileInfo(path).absolutePath() + QLatin1Char('/') +
+                                                        archiveFolderName(path);
+                                       if (eo.password.isEmpty())
+                                         eo.password = session.password();
                                        auto result = session.extract({}, eo, state, prompts);
                                        total.files += result.files;
                                        total.folders += result.folders;
                                        total.unpackedSize += result.unpackedSize;
                                        total.messages += result.messages;
+                                       session.close();
+                                       if (result.canceled)
+                                       {
+                                         total.ok = false;
+                                         total.canceled = true;
+                                         break;
+                                       }
                                        if (!result.ok)
                                        {
                                          total.ok = false;
-                                         total.error = result.error;
+                                         errors << QFileInfo(path).fileName() + QStringLiteral(": ") + result.error;
                                        }
-                                       session.close();
                                      }
+                                     total.error = errors.join(QLatin1Char('\n'));
                                      return total;
                                    });
   if (!result.ok && !result.canceled)
     m_prompts->showError(MainWindow::tr("Extraction failed"), result.error);
   else if (result.ok)
-    m_status->setText(MainWindow::tr("Extracted %1 item(s)").arg(result.files));
+    m_status->setText(MainWindow::tr("Extracted %1 item(s) from %2 archive(s)")
+                          .arg(result.files).arg(archives.size()));
   m_active->refresh();
+  refreshPanelsShowing(base.outputDir);
 }
 
 void MainWindow::testLocalArchives()
@@ -1534,7 +1869,8 @@ void MainWindow::testLocalArchives()
                                        if (!session.open(path, QString(), state, prompts, &openError))
                                        {
                                          total.ok = false;
-                                         total.error = openError;
+                                         total.error += (total.error.isEmpty() ? QString() : QStringLiteral("\n")) +
+                                                        QFileInfo(path).fileName() + QStringLiteral(": ") + openError;
                                          continue;
                                        }
                                        ExtractOptions eo;
@@ -1544,38 +1880,45 @@ void MainWindow::testLocalArchives()
                                        total.files += result.files;
                                        total.unpackedSize += result.unpackedSize;
                                        total.messages += result.messages;
+                                       session.close();
+                                       if (result.canceled)
+                                       {
+                                         total.ok = false;
+                                         total.canceled = true;
+                                         return total;
+                                       }
                                        if (!result.ok)
                                        {
                                          total.ok = false;
-                                         total.error = result.error;
+                                         total.error += (total.error.isEmpty() ? QString() : QStringLiteral("\n")) +
+                                                        QFileInfo(path).fileName() + QStringLiteral(": ") + result.error;
                                        }
-                                       session.close();
                                      }
                                      return total;
                                    });
   if (!result.ok && !result.canceled)
     m_prompts->showError(MainWindow::tr("Test failed"), result.error);
   else if (result.ok)
-    m_prompts->showInfo(MainWindow::tr("Test completed"), MainWindow::tr("No errors were found."));
+    m_prompts->showInfo(MainWindow::tr("Test completed"),
+                        MainWindow::tr("No errors were found in %n archive(s).", nullptr, int(archives.size())) +
+                            QLatin1Char('\n') +
+                            MainWindow::tr("%1 file(s) tested.").arg(result.files));
+}
+
+static QString menuSafe(QString text)
+{
+  // A single '&' in menu text would turn into a mnemonic underline.
+  return text.replace(QLatin1Char('&'), QStringLiteral("&&"));
 }
 
 void MainWindow::compressSelectionQuick(const QString &extension)
 {
   if (!m_active || m_active->isArchive()) return;
-  QStringList files = m_active->selectedLocalPaths();
-  QString targetDir = m_active->localPath();
-  if (files.isEmpty())
-  {
-    const QFileInfo current(targetDir);
-    files << current.absoluteFilePath();
-    targetDir = current.absolutePath();
-    if (targetDir.isEmpty()) targetDir = current.absoluteFilePath();
-  }
-  const QFileInfo first(files.first());
-  QString base = first.isDir() ? first.fileName() : first.completeBaseName();
-  if (base.isEmpty()) base = QStringLiteral("archive");
-  const QString archivePath = targetDir + QLatin1Char('/') + base + QLatin1Char('.') + extension;
-  for (const QString &input : files)
+  const QuickArchiveTarget target =
+      quickArchiveTarget(m_active->selectedLocalPaths(), m_active->localPath(), extension);
+  const QString archivePath = target.archivePath;
+  const QString archiveName = QFileInfo(archivePath).fileName();
+  for (const QString &input : target.inputs)
   {
     if (QFileInfo(input).absoluteFilePath() == QFileInfo(archivePath).absoluteFilePath())
     {
@@ -1584,16 +1927,21 @@ void MainWindow::compressSelectionQuick(const QString &extension)
       return;
     }
   }
+  // Like 7-Zip, the quick action adds to an archive that already exists
+  // (items with the same name are updated); say so instead of implying the
+  // old archive is thrown away.
   if (QFileInfo::exists(archivePath) &&
-      !m_prompts->confirm(MainWindow::tr("Replace archive"),
-                          MainWindow::tr("%1 already exists. Replace it?").arg(archivePath), true))
+      !m_prompts->confirm(MainWindow::tr("Update archive"),
+                          MainWindow::tr("%1 already exists.\nAdd the selected item(s) to it?")
+                              .arg(archiveName)))
     return;
   CompressOptions options;
   options.archivePath = archivePath;
   options.formatIndex = SevenZipEngine::instance().formatIndex(extension == QLatin1String("zip")
       ? QStringLiteral("zip") : QStringLiteral("7z"));
   options.level = 5;
-  const auto result = runOperation(MainWindow::tr("Compressing"),
+  const QStringList files = target.inputs;
+  const auto result = runOperation(MainWindow::tr("Compressing to %1").arg(archiveName),
                                    [files, options](ProgressState *state, PromptDispatcher *prompts) {
                                      return compressFiles(files, options, state, prompts);
                                    });
@@ -1601,9 +1949,22 @@ void MainWindow::compressSelectionQuick(const QString &extension)
     m_prompts->showError(MainWindow::tr("Compression failed"), result.error);
   else if (result.ok)
   {
-    m_status->setText(MainWindow::tr("Created %1").arg(archivePath));
-    m_active->refresh();
+    m_status->setText(MainWindow::tr("Created %1 (%n item(s))", nullptr, int(files.size())).arg(archivePath));
+    showCreatedArchive(archivePath);
   }
+}
+
+void MainWindow::showCreatedArchive(const QString &archivePath)
+{
+  if (!m_active || m_active->isArchive())
+    return;
+  m_active->refresh();
+  if (QFileInfo(archivePath).absolutePath() == QFileInfo(m_active->localPath()).absoluteFilePath())
+    m_active->selectLocalPathsWhenLoaded({archivePath});
+  FilePanel *other = otherPanel();
+  if (m_twoPanels && other && !other->isArchive() &&
+      QFileInfo(other->localPath()).absoluteFilePath() == QFileInfo(archivePath).absolutePath())
+    other->refresh();
 }
 
 void MainWindow::hashSelection(const QString &method)
@@ -1640,20 +2001,38 @@ void MainWindow::showPanelContextMenu(const QPoint &globalPos)
     const QStringList archiveFiles = selectedLocalArchiveFiles();
     const bool hasArchive = !archiveFiles.isEmpty();
     QMenu *seven = menu.addMenu(QStringLiteral("7-Zip"));
-    seven->addAction(MainWindow::tr("Open archive"), this, [this] { openCurrentItem(); })->setEnabled(hasArchive);
-    seven->addAction(MainWindow::tr("Extract files..."), this, [this] { extractLocalArchives(true); })->setEnabled(hasArchive);
-    seven->addAction(MainWindow::tr("Extract Here"), this, [this] { extractLocalArchives(false); })->setEnabled(hasArchive);
+    seven->addAction(MainWindow::tr("Open archive"), this, [this] { openCurrentItem(); })
+        ->setEnabled(archiveFiles.size() == 1);
+    seven->addAction(MainWindow::tr("Extract files..."), this, [this] { extractLocalArchives(LocalExtract::Dialog); })
+        ->setEnabled(hasArchive);
+    seven->addAction(MainWindow::tr("Extract Here"), this, [this] { extractLocalArchives(LocalExtract::Here); })
+        ->setEnabled(hasArchive);
+    const QString folderLabel = archiveFiles.size() == 1
+        ? MainWindow::tr("Extract to \"%1/\"").arg(menuSafe(fontMetrics().elidedText(
+              archiveFolderName(archiveFiles.first()), Qt::ElideMiddle, 260)))
+        : MainWindow::tr("Extract each to its own folder");
+    seven->addAction(folderLabel, this, [this] { extractLocalArchives(LocalExtract::ToFolders); })
+        ->setEnabled(hasArchive);
     seven->addAction(MainWindow::tr("Test archive"), this, [this] { testLocalArchives(); })->setEnabled(hasArchive);
     seven->addSeparator();
     seven->addAction(MainWindow::tr("Add to archive..."), this, &MainWindow::addToArchive);
-    seven->addAction(MainWindow::tr("Add to \"<name>.7z\""), this, [this] { compressSelectionQuick(QStringLiteral("7z")); });
-    seven->addAction(MainWindow::tr("Add to \"<name>.zip\""), this, [this] { compressSelectionQuick(QStringLiteral("zip")); });
+    const QStringList quickInputs = panel->selectedLocalPaths();
+    const QString quickBase = quickArchiveTarget(quickInputs, panel->localPath(), QStringLiteral("7z")).baseName;
+    const QString shownBase = menuSafe(fontMetrics().elidedText(quickBase, Qt::ElideMiddle, 260));
+    QAction *quick7z = seven->addAction(MainWindow::tr("Add to \"%1.7z\"").arg(shownBase), this,
+                                        [this] { compressSelectionQuick(QStringLiteral("7z")); });
+    QAction *quickZip = seven->addAction(MainWindow::tr("Add to \"%1.zip\"").arg(shownBase), this,
+                                         [this] { compressSelectionQuick(QStringLiteral("zip")); });
+    const QString quickTip = quickInputs.isEmpty()
+        ? MainWindow::tr("Compress the current folder")
+        : MainWindow::tr("Compress %n selected item(s)", nullptr, int(quickInputs.size()));
+    quick7z->setToolTip(quickTip);
+    quickZip->setToolTip(quickTip);
+    seven->setToolTipsVisible(true);
     menu.addSeparator();
 
     add(MainWindow::tr("Open"), [this] { openCurrentItem(); }, selectedCount == 1, QKeySequence(Qt::Key_Return));
     add(MainWindow::tr("Open Inside"), [this] { openInside(QString()); }, selectedCount == 1, QKeySequence(QStringLiteral("Ctrl+PgDown")));
-    add(MainWindow::tr("Open Inside *"), [this] { openInside(MainWindow::tr("*")); }, selectedCount == 1);
-    add(MainWindow::tr("Open Inside #"), [this] { openInside(MainWindow::tr("#")); }, selectedCount == 1);
     add(MainWindow::tr("Open Outside"), [this] { openOutside(); }, selectedCount == 1, QKeySequence(QStringLiteral("Shift+Return")));
     add(MainWindow::tr("View"), [this] { openExternalView(); }, selectedCount == 1, QKeySequence(Qt::Key_F3));
     add(MainWindow::tr("Edit"), [this] { openExternalEdit(); }, selectedCount == 1, QKeySequence(Qt::Key_F4));
@@ -1663,40 +2042,45 @@ void MainWindow::showPanelContextMenu(const QPoint &globalPos)
     add(MainWindow::tr("Move to Other Panel"), [this] { moveToOtherPanel(); }, selectedCount >= 1, QKeySequence(Qt::Key_F6));
     add(MainWindow::tr("Copy To..."), [this] { copySelected(); }, selectedCount >= 1, QKeySequence(QStringLiteral("Ctrl+F5")));
     add(MainWindow::tr("Move To..."), [this] { moveSelected(); }, selectedCount >= 1, QKeySequence(QStringLiteral("Ctrl+F6")));
-    add(MainWindow::tr("Delete"), [this] { deleteSelected(); }, selectedCount >= 1, QKeySequence(Qt::Key_Delete));
+    add(MainWindow::tr("Move to Trash"), [this] { deleteSelected(); }, selectedCount >= 1, QKeySequence(Qt::Key_Delete));
     menu.addSeparator();
-    add(MainWindow::tr("Split file..."), [this] { splitFile(); }, selectedCount == 1);
-    add(MainWindow::tr("Combine files..."), [this] { combineFiles(); }, selectedCount == 1);
     add(MainWindow::tr("Properties"), [this] { showProperties(); }, selectedCount == 1, QKeySequence(QStringLiteral("Alt+Return")));
-    add(MainWindow::tr("Comment..."), [this] { editComment(); }, false, QKeySequence(QStringLiteral("Ctrl+Z")));
     QMenu *crc = menu.addMenu(MainWindow::tr("CRC"));
     for (const QString &method : {QStringLiteral("CRC32"), QStringLiteral("CRC64"), QStringLiteral("MD5"),
                                   QStringLiteral("SHA1"), QStringLiteral("SHA256"), QStringLiteral("SHA512"),
                                   QStringLiteral("SHA3-256"), QStringLiteral("BLAKE2sp"), QStringLiteral("XXH64")})
       crc->addAction(method, this, [this, method] { hashSelection(method); });
+    QMenu *more = menu.addMenu(MainWindow::tr("More"));
+    auto addMore = [more, this](const QString &text, const std::function<void()> &fn, bool enabled) {
+      more->addAction(text, this, fn)->setEnabled(enabled);
+    };
+    addMore(MainWindow::tr("Open Inside *"), [this] { openInside(QStringLiteral("*")); }, selectedCount == 1);
+    addMore(MainWindow::tr("Open Inside #"), [this] { openInside(QStringLiteral("#")); }, selectedCount == 1);
+    more->addSeparator();
+    addMore(MainWindow::tr("Split file..."), [this] { splitFile(); }, selectedCount == 1);
+    addMore(MainWindow::tr("Combine files..."), [this] { combineFiles(); }, selectedCount == 1);
+    addMore(MainWindow::tr("Link..."), [this] { createLink(); }, selectedCount == 1);
     menu.addSeparator();
     add(MainWindow::tr("Create Folder..."), [this] { createFolder(); }, true, QKeySequence(Qt::Key_F7));
     add(MainWindow::tr("Create File..."), [this] { createFile(); }, true, QKeySequence(QStringLiteral("Ctrl+N")));
     menu.addSeparator();
-    add(MainWindow::tr("Link..."), [this] { createLink(); }, selectedCount == 1);
-    add(MainWindow::tr("Alternate streams"), [] {}, false);
-    menu.addSeparator();
     add(MainWindow::tr("Select All"), [panel] { panel->selectAllRows(); }, true, QKeySequence(QKeySequence::SelectAll));
     add(MainWindow::tr("Invert Selection"), [panel] { panel->invertSelection(); });
-    add(MainWindow::tr("Refresh"), [panel] { panel->refresh(); }, true, QKeySequence(QKeySequence::Refresh));
+    add(MainWindow::tr("Refresh"), [panel] { panel->refresh(); }, true, QKeySequence(QStringLiteral("Ctrl+R")));
   }
   else
   {
     add(MainWindow::tr("Open"), [this] { openCurrentItem(); }, selectedCount == 1, QKeySequence(Qt::Key_Return));
     add(MainWindow::tr("Open Inside"), [this] { openCurrentItem(); }, selectedCount == 1, QKeySequence(QStringLiteral("Ctrl+PgDown")));
-    add(MainWindow::tr("Open Inside *"), [this] { openCurrentArchiveInside(MainWindow::tr("*")); }, selectedCount == 1);
-    add(MainWindow::tr("Open Inside #"), [this] { openCurrentArchiveInside(MainWindow::tr("#")); }, selectedCount == 1);
     add(MainWindow::tr("Open Outside"), [this] { openOutside(); }, selectedCount == 1, QKeySequence(QStringLiteral("Shift+Return")));
     add(MainWindow::tr("View"), [this] { openExternalView(); }, selectedCount == 1, QKeySequence(Qt::Key_F3));
     add(MainWindow::tr("Edit"), [this] { openExternalEdit(); }, selectedCount == 1, QKeySequence(Qt::Key_F4));
     menu.addSeparator();
     add(MainWindow::tr("Extract files..."), [this] { extractArchive(); }, true, QKeySequence(QStringLiteral("Ctrl+E")));
-    add(MainWindow::tr("Extract Here"), [this] { extractHere(); }, true);
+    add(MainWindow::tr("Extract Here"), [this] { extractHere(false); }, true);
+    add(MainWindow::tr("Extract to \"%1/\"").arg(menuSafe(fontMetrics().elidedText(
+            archiveFolderName(panel->rootArchivePath()), Qt::ElideMiddle, 260))),
+        [this] { extractHere(true); }, true);
     add(MainWindow::tr("Test archive"), [this] { testArchive(); }, true, QKeySequence(QStringLiteral("Ctrl+T")));
     menu.addSeparator();
     add(MainWindow::tr("Rename..."), [this] { renameSelected(); }, selectedCount == 1, QKeySequence(Qt::Key_F2));
@@ -1710,17 +2094,20 @@ void MainWindow::showPanelContextMenu(const QPoint &globalPos)
                                   QStringLiteral("SHA1"), QStringLiteral("SHA256"), QStringLiteral("SHA512"),
                                   QStringLiteral("SHA3-256"), QStringLiteral("BLAKE2sp"), QStringLiteral("XXH64")})
       crc->addAction(method, this, [this, method] { hashSelection(method); });
+    QMenu *more = menu.addMenu(MainWindow::tr("More"));
+    more->addAction(MainWindow::tr("Open Inside *"), this, [this] { openCurrentArchiveInside(QStringLiteral("*")); })
+        ->setEnabled(selectedCount == 1);
+    more->addAction(MainWindow::tr("Open Inside #"), this, [this] { openCurrentArchiveInside(QStringLiteral("#")); })
+        ->setEnabled(selectedCount == 1);
     menu.addSeparator();
     add(MainWindow::tr("Create Folder..."), [this] { createFolder(); }, true, QKeySequence(Qt::Key_F7));
+    menu.addSeparator();
     add(MainWindow::tr("Select All"), [panel] { panel->selectAllRows(); }, true, QKeySequence(QKeySequence::SelectAll));
     add(MainWindow::tr("Invert Selection"), [panel] { panel->invertSelection(); });
-    add(MainWindow::tr("Refresh"), [panel] { panel->refresh(); }, true, QKeySequence(QKeySequence::Refresh));
+    add(MainWindow::tr("Refresh"), [panel] { panel->refresh(); }, true, QKeySequence(QStringLiteral("Ctrl+R")));
   }
 
-  menu.setStyleSheet(QStringLiteral(
-      "QMenu { padding: 4px; }"
-      "QMenu::item { padding: 3px 24px 3px 10px; }"
-      "QMenu::separator { margin: 2px 8px; }"));
+  menu.setObjectName(QStringLiteral("contextMenu"));
   menu.exec(globalPos);
 }
 

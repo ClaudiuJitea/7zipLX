@@ -12,7 +12,7 @@
   <img alt="Platform: Linux" src="https://img.shields.io/badge/platform-Linux-2ea44f?logo=linux&logoColor=white">
   <img alt="Qt 6.4+" src="https://img.shields.io/badge/Qt-6.4%2B-41cd52?logo=qt&logoColor=white">
   <img alt="7-Zip 26.06" src="https://img.shields.io/badge/engine-7--Zip%2026.06-cc0000">
-  <img alt="Version 0.5.2" src="https://img.shields.io/badge/version-0.5.2-blue">
+  <img alt="Version 0.5.3" src="https://img.shields.io/badge/version-0.5.3-blue">
 </p>
 
 ![7zipLX 0.5 with an archive open in single-pane mode](docs/screenshots/hero.png)
@@ -71,11 +71,11 @@ Prebuilt assets are on the
 
 ```bash
 # Debian / Ubuntu
-sudo apt install ./7ziplx_0.5.2-1_amd64.deb
+sudo apt install ./7ziplx_0.5.3-1_amd64.deb
 
 # AppImage
-chmod +x 7zipLX-0.5.2-x86_64.AppImage
-./7zipLX-0.5.2-x86_64.AppImage
+chmod +x 7zipLX-0.5.3-x86_64.AppImage
+./7zipLX-0.5.3-x86_64.AppImage
 ```
 
 Python 3 and `python3-pil` are only needed to regenerate the README images.
@@ -91,14 +91,21 @@ flatpak-builder --user --install --force-clean build-flatpak \
 ## CLI
 
 ```bash
-7ziplx --extract-here archive.7z
-7ziplx --extract-to DIR archive.zip
-7ziplx --compress file-or-folder
-7ziplx --compress-to out.7z file1 file2
+7ziplx --extract-here archive.7z          # into the archive's folder
+7ziplx --extract-to-folder a.zip b.7z     # each into its own folder
+7ziplx --extract-to /path/to/output archive.zip
+7ziplx --extract archive.7z               # Extract dialog
+7ziplx --test archive.7z
+7ziplx --compress a.txt b.txt             # one archive: <folder>.7z
+7ziplx --compress --format zip photos/    # photos.zip
+7ziplx --compress-to output.7z file1 file2
+7ziplx --add file1 folder2                # Add to Archive dialog
 ```
 
 CLI modes show the normal progress dialog, support passwords and overwrite
-prompts, and exit without opening the main window.
+prompts, and exit without opening the main window. They power the right-click
+**7-Zip** menu on the GNOME desktop (Scripts → 7zipLX), in GNOME Files (with
+`python3-nautilus`), Dolphin, Nemo and Thunar — see the user guide.
 
 ## Build and test
 

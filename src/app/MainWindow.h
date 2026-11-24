@@ -31,6 +31,7 @@ public:
   bool twoPanels() const { return m_twoPanels; }
 
 protected:
+  bool eventFilter(QObject *watched, QEvent *event) override;
   void closeEvent(QCloseEvent *event) override;
   void changeEvent(QEvent *event) override;
 
@@ -89,15 +90,19 @@ private:
   void setActivePanel(FilePanel *panel);
   void updateActions();
   void updateThemeIcons();
+  void updateWindowTitle();
   bool revealSecondPanelForTransfer();
   void openCurrentItem();
   void openInside(const QString &formatHint);
   void openCurrentArchiveInside(const QString &formatHint);
   void openOutside();
-  void extractHere();
-  void extractLocalArchives(bool chooseDirectory);
+  enum class LocalExtract { Here, ToFolders, Dialog };
+  void extractHere(bool toFolder = false);
+  void extractLocalArchives(LocalExtract mode);
+  void refreshPanelsShowing(const QString &dir);
   void testLocalArchives();
   void compressSelectionQuick(const QString &extension);
+  void showCreatedArchive(const QString &archivePath);
   void hashSelection(const QString &method);
   QStringList selectedLocalArchiveFiles() const;
   void saveSettings();
@@ -122,6 +127,7 @@ private:
   QAction *m_openAction = nullptr;
   QAction *m_upAction = nullptr;
   QAction *m_refreshAction = nullptr;
+  class QLineEdit *m_filter = nullptr;
   std::unique_ptr<OperationRunner> m_runner;
   std::unique_ptr<ExternalToolController> m_externalTools;
   std::unique_ptr<HashController> m_hash;

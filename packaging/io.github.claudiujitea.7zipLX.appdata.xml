@@ -23,6 +23,13 @@
   </categories>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.5.3" date="2026-11-24">
+      <description>
+        <p>Right-click 7-Zip menus on the GNOME desktop and in Files, Dolphin, Nemo and Thunar, with extract actions for archives and compress actions for other files.</p>
+        <p>Archives show a ".." entry and going up from an archive returns to its folder. Right-clicking a multi-selection keeps it. A filter box, a cleaner toolbar and aligned dialogs.</p>
+        <p>Fixes for Extract Here in nested archives, Create File overwriting files, permanent deletion without asking, and split/combine of large files.</p>
+      </description>
+    </release>
     <release version="0.5.2" date="2026-11-23">
       <description>
         <p>Associate the window with the installed desktop entry so Ubuntu/GNOME shows the 7zipLX icon in the dock and task switcher.</p>

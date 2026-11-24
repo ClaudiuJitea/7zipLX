@@ -36,7 +36,7 @@ OptionsDialog::OptionsDialog(bool showHidden, bool showDots, bool showGrid, bool
   auto *heading = new QLabel(OptionsDialog::tr("Options"), this);
   heading->setObjectName(QStringLiteral("dialogHeading"));
   layout->addWidget(heading);
-  auto *sub = new QLabel(OptionsDialog::tr("Configure the file list, external tools, associations and language."), this);
+  auto *sub = new QLabel(OptionsDialog::tr("Configure the file list, external tools, desktop integration and language."), this);
   sub->setObjectName(QStringLiteral("dialogSubheading"));
   sub->setWordWrap(true);
   layout->addWidget(sub);
@@ -131,14 +131,35 @@ OptionsDialog::OptionsDialog(bool showHidden, bool showDots, bool showGrid, bool
   auto *assoc = new QWidget(tabs);
   auto *assocLayout = new QVBoxLayout(assoc);
   assocLayout->setContentsMargins(14, 14, 14, 14);
-  auto *assocNote = new QLabel(OptionsDialog::tr("Register 7zipLX as a desktop handler for archive MIME types. The desktop file must already be installed."), assoc);
+  auto *menusGroup = new QGroupBox(OptionsDialog::tr("Right-click menus"), assoc);
+  auto *menusLayout = new QVBoxLayout(menusGroup);
+  menusLayout->setContentsMargins(14, 18, 14, 14);
+  menusLayout->setSpacing(8);
+  m_fileManagerMenus = new QCheckBox(OptionsDialog::tr("Show 7zipLX actions on the desktop and in the file manager"), menusGroup);
+  m_fileManagerMenus->setChecked(true);
+  menusLayout->addWidget(m_fileManagerMenus);
+  auto *menusNote = new QLabel(OptionsDialog::tr(
+      "Archives get Extract Here, Extract to Folder, Extract Files… and Test; other files get "
+      "Add to Archive… and Compress to 7z / zip. On GNOME they appear under Scripts → 7zipLX; "
+      "with python3-nautilus installed, Files windows also show a 7-Zip submenu."), menusGroup);
+  menusNote->setWordWrap(true);
+  menusNote->setObjectName(QStringLiteral("dialogSubheading"));
+  menusLayout->addWidget(menusNote);
+  assocLayout->addWidget(menusGroup);
+
+  auto *defaultGroup = new QGroupBox(OptionsDialog::tr("Default application"), assoc);
+  auto *defaultLayout = new QVBoxLayout(defaultGroup);
+  defaultLayout->setContentsMargins(14, 18, 14, 14);
+  defaultLayout->setSpacing(8);
+  auto *assocNote = new QLabel(OptionsDialog::tr("Open archives with 7zipLX when they are double-clicked in the file manager."), defaultGroup);
   assocNote->setWordWrap(true);
-  assocLayout->addWidget(assocNote);
-  auto *assocButton = new QPushButton(OptionsDialog::tr("Set as default for 7z and ZIP"), assoc);
-  assocLayout->addWidget(assocButton, 0, Qt::AlignLeft);
+  defaultLayout->addWidget(assocNote);
+  auto *assocButton = new QPushButton(OptionsDialog::tr("Set as default for 7z and ZIP"), defaultGroup);
+  defaultLayout->addWidget(assocButton, 0, Qt::AlignLeft);
+  assocLayout->addWidget(defaultGroup);
   assocLayout->addStretch();
   connect(assocButton, &QPushButton::clicked, this, &OptionsDialog::setDefaultAssociation);
-  tabs->addTab(assoc, OptionsDialog::tr("Associations"));
+  tabs->addTab(assoc, OptionsDialog::tr("Integration"));
 
   auto *languagePage = new QWidget(tabs);
   auto *languageForm = new QFormLayout(languagePage);
@@ -185,6 +206,8 @@ QString OptionsDialog::editorCommand() const { return m_editor->text().trimmed()
 QString OptionsDialog::diffCommand() const { return m_diff->text().trimmed(); }
 QString OptionsDialog::language() const { return m_language->currentData().toString(); }
 QString OptionsDialog::theme() const { return m_theme->currentData().toString(); }
+bool OptionsDialog::fileManagerMenus() const { return m_fileManagerMenus->isChecked(); }
+void OptionsDialog::setFileManagerMenus(bool enabled) { m_fileManagerMenus->setChecked(enabled); }
 
 void OptionsDialog::setDefaultAssociation()
 {

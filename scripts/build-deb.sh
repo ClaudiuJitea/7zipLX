@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="${VERSION:-0.5.2}"
+VERSION="${VERSION:-0.5.3}"
 REVISION="${REVISION:-1}"
 ARCH="${ARCH:-$(dpkg --print-architecture)}"
 MULTIARCH="${MULTIARCH:-$(dpkg-architecture -qDEB_HOST_MULTIARCH)}"
@@ -39,6 +39,7 @@ test -x "$STAGE/usr/bin/7ziplx"
 test -f "$STAGE/usr/bin/7z.so"
 test -f "$STAGE/usr/lib/$MULTIARCH/lib7zcore.so"
 test -f "$STAGE/usr/share/applications/7ziplx.desktop"
+test -f "$STAGE/usr/share/nautilus-python/extensions/7ziplx.py"
 
 mkdir -p "$STAGE/DEBIAN" "$STAGE/usr/share/doc/7ziplx"
 cp "$ROOT/packaging/debian/copyright" "$STAGE/usr/share/doc/7ziplx/copyright"
@@ -118,7 +119,7 @@ INSTALLED_SIZE="$(du -sk "$STAGE/usr" | awk '{print $1}')"
   echo "Maintainer: ${MAINTAINER}"
   echo "Installed-Size: ${INSTALLED_SIZE}"
   echo "Depends: ${DEPENDS}, qt6-svg-plugins"
-  echo "Recommends: xdg-utils, diffutils"
+  echo "Recommends: xdg-utils, diffutils, python3-nautilus"
 
   echo "Section: utils"
   echo "Priority: optional"

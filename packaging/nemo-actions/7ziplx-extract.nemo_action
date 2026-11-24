@@ -1,0 +1,8 @@
+[Nemo Action]
+Name=7-Zip: Extract Files…
+Comment=Choose where and how to extract
+Exec=7ziplx --extract %F
+Icon-Name=archive-extract
+Selection=notnone
+Extensions=7z;zip;zipx;rar;tar;gz;tgz;bz2;tbz2;xz;txz;zst;tzst;lzma;z;cab;iso;wim;arj;lzh;cpio;rpm;deb;jar;apk;xar;pkg;dmg;squashfs;001;
+Quote=double

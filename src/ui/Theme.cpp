@@ -1,4 +1,5 @@
 #include "Theme.h"
+#include "dialogs/DialogLayout.h"
 
 #include <QAbstractButton>
 #include <QApplication>
@@ -6,6 +7,7 @@
 #include <QEvent>
 #include <QFont>
 #include <QFontDatabase>
+#include <QFormLayout>
 #include <QGuiApplication>
 #include <QHash>
 #include <QMessageBox>
@@ -75,6 +77,8 @@ public:
                                    qobject_cast<QMessageBox *>(widget)))
         {
           strip(widget);
+          for (QFormLayout *form : widget->findChildren<QFormLayout *>())
+            alignDialogFormLabels(form);
           QTimer::singleShot(0, widget, [widget] { strip(widget); });
         }
       }
@@ -228,6 +232,8 @@ QMainWindow, QDialog {
   border: 1px solid #35383f;
   border-radius: 8px;
   padding: 3px 8px;
+  min-height: 22px;
+  max-height: 22px;
 }
 QLabel#brand {
   color: #f1f3f5;
@@ -238,6 +244,7 @@ QLabel#brand {
 }
 QLabel {
   background: transparent;
+  qproperty-indent: 0;
 }
 QLabel#dialogHeading {
   font-size: 15pt;
@@ -310,7 +317,7 @@ QMenu {
   padding: 6px;
 }
 QMenu::item {
-  padding: 8px 28px 8px 12px;
+  padding: 6px 28px 6px 12px;
   border-radius: 6px;
   background: transparent;
 }
@@ -352,12 +359,34 @@ QToolButton:hover {
 QToolButton:pressed {
   background: #32353b;
 }
+QToolBar#mainToolbar QToolButton {
+  padding: 5px 10px;
+  min-height: 20px;
+  max-height: 20px;
+}
+QWidget#toolbarSpacer {
+  background: transparent;
+}
+QLabel#brandLogo {
+  padding: 0 2px 0 4px;
+}
+QLineEdit#toolbarFilter {
+  min-height: 26px;
+  max-height: 26px;
+  border-radius: 8px;
+  padding: 0 8px;
+  margin-right: 6px;
+}
 QToolButton:checked {
   background: #2c4f66;
   border-color: #3d6b88;
 }
 QToolButton:disabled {
   color: #6c7078;
+}
+QToolBar#mainToolbar QToolButton:checked {
+  background: #32353b;
+  border-color: #3a3d45;
 }
 QComboBox, QLineEdit, QSpinBox {
   background: #222429;
@@ -373,6 +402,7 @@ QComboBox {
 }
 QSpinBox {
   padding-right: 38px;
+  max-height: 34px;
 }
 QComboBox:hover, QLineEdit:hover, QSpinBox:hover {
   border-color: #4b505a;
@@ -462,9 +492,15 @@ QTableView::item {
   padding: 3px 6px;
   border: none;
 }
+QTableView::item:hover {
+  background: #292b30;
+}
 QTableView::item:selected {
   background: #2b4b63;
   color: #ffffff;
+}
+QTableView::item:selected:hover {
+  background: #2c4f66;
 }
 QHeaderView::section {
   font-weight: 600;
@@ -520,6 +556,12 @@ QStatusBar {
   background: #18191c;
   border-top: 1px solid #2c2e34;
   color: #9aa0a8;
+  padding: 0 8px;
+  min-height: 24px;
+}
+QLabel#windowStatus {
+  color: #9aa0a8;
+  padding: 2px 4px;
 }
 QStatusBar::item {
   border: none;
@@ -757,6 +799,7 @@ QTabBar::tab:selected, QPushButton:default, QPushButton:default:hover {
   color: #ffffff;
 }
 QPushButton:default:hover { background: #2560ad; }
+QToolBar#mainToolbar QToolButton:checked { color: #20242a; }
 )QSS");
   return css;
 }

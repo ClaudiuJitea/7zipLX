@@ -1,3 +1,0 @@
-#!/bin/sh
-# Nautilus script: create <name>.7z for every selected file or folder.
-exec 7ziplx --compress "$@"

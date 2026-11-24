@@ -119,3 +119,4 @@ QString SevenZipEngine::formatExtension(int index) const
     return QString();
   return u2q(g_CodecsObj->Formats[unsigned(index)].GetMainExt());
 }
+

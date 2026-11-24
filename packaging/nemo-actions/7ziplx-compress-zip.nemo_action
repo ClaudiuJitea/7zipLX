@@ -1,0 +1,8 @@
+[Nemo Action]
+Name=7-Zip: Compress to zip
+Comment=Create a zip archive
+Exec=7ziplx --compress --format zip %F
+Icon-Name=archive-insert
+Selection=notnone
+Extensions=any;
+Quote=double

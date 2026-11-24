@@ -22,6 +22,8 @@ public:
   QString diffCommand() const;
   QString language() const;
   QString theme() const;
+  bool fileManagerMenus() const;
+  void setFileManagerMenus(bool enabled);
 
 private slots:
   void setDefaultAssociation();
@@ -37,4 +39,5 @@ private:
   QLineEdit *m_diff = nullptr;
   QComboBox *m_language = nullptr;
   QComboBox *m_theme = nullptr;
+  QCheckBox *m_fileManagerMenus = nullptr;
 };

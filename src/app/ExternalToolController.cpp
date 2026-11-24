@@ -1,4 +1,5 @@
 #include "ExternalToolController.h"
+#include "backend/ShellCommand.h"
 
 #include "OperationRunner.h"
 #include "backend/ArchiveSession.h"
@@ -155,7 +156,7 @@ void ExternalToolController::diff(FilePanel *panel)
     }
   }
 
-  QStringList parts = QProcess::splitCommand(commandSetting("tools/diffCommand", "diff -u"));
+  QStringList parts = splitShellCommand(commandSetting("tools/diffCommand", "diff -u"));
   if (parts.isEmpty())
   {
     m_prompts->showError(tr("Diff"), tr("The diff command is empty."));
@@ -368,7 +369,7 @@ bool ExternalToolController::materializeSingle(FilePanel *panel, bool editable, 
     return true;
   }
 
-  const int row = panel->currentRow();
+  const int row = panel->currentArchiveItem();
   if (row < 0)
   {
     if (error)
@@ -833,7 +834,7 @@ void ExternalToolController::writeBack(quint64 id)
 bool ExternalToolController::launchExternal(const QString &command, const QString &path,
                                             QString *error)
 {
-  QStringList parts = QProcess::splitCommand(command);
+  QStringList parts = splitShellCommand(command);
   if (parts.isEmpty())
   {
     if (error)

@@ -6,6 +6,11 @@
 
 #include <QEventLoop>
 #include <QThread>
+#include <QTimer>
+
+namespace {
+constexpr int kProgressDialogDelayMs = 400;
+}
 
 class OperationThread : public QThread
 {
@@ -44,10 +49,25 @@ OperationResult OperationRunner::run(const QString &title, const OperationFn &fn
 
   QEventLoop loop;
   QObject::connect(&thread, &QThread::finished, &loop, &QEventLoop::quit);
-  dialog.show();
   thread.start();
-  loop.exec();
-  dialog.hide();
+
+  // Quick operations (a small "Add to <name>.7z", a test of a tiny archive)
+  // should not flash a modal window.  Wait a moment first with user input
+  // held back, so nothing can touch the main window while the worker runs,
+  // and only show the progress dialog when the work takes longer.
+  QTimer delay;
+  delay.setSingleShot(true);
+  QObject::connect(&delay, &QTimer::timeout, &loop, &QEventLoop::quit);
+  delay.start(kProgressDialogDelayMs);
+  loop.exec(QEventLoop::ExcludeUserInputEvents);
+  delay.stop();
+
+  if (!thread.isFinished())
+  {
+    dialog.show();
+    loop.exec();
+    dialog.hide();
+  }
   thread.wait();
   return thread.result;
 }

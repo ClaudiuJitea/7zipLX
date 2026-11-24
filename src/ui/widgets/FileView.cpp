@@ -180,6 +180,21 @@ void FileView::mousePressEvent(QMouseEvent *event)
   m_pressOnSelectedRow = false;
   m_pressSelection = QItemSelection();
   m_pressIndex = QModelIndex();
+  if (event->button() == Qt::RightButton && selectionModel() &&
+      !(event->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier)))
+  {
+    // A right-click on a selected row opens the context menu for the whole
+    // selection.  QTableView would otherwise replace the selection with the
+    // clicked row before the menu is shown.
+    const QModelIndex index = indexAt(event->pos());
+    if (index.isValid() && selectionModel()->isRowSelected(index.row(), QModelIndex()))
+    {
+      setFocus(Qt::MouseFocusReason);
+      selectionModel()->setCurrentIndex(index, QItemSelectionModel::NoUpdate);
+      event->accept();
+      return;
+    }
+  }
   if (event->button() == Qt::LeftButton)
   {
     m_pressPosition = event->pos();
@@ -245,7 +260,8 @@ void FileView::updateDropTarget(const QPoint &viewportPos)
       }
       else if (m_panel->mode() == FilePanel::ArchiveMode)
       {
-        if (m_panel->archiveModel()->entry(index.row()).isDir)
+        const int item = m_panel->archiveModel()->itemForRow(index.row());
+        if (item >= 0 && m_panel->archiveModel()->entry(item).isDir)
           row = index.row();
       }
     }
@@ -351,6 +367,21 @@ void FileView::dropEvent(QDropEvent *event)
 void FileView::paintEvent(QPaintEvent *event)
 {
   QTableView::paintEvent(event);
+  if (m_panel && model() && m_panel->visibleItemCount() == 0)
+  {
+    const QString message = m_panel->emptyMessage();
+    if (!message.isEmpty())
+    {
+      QPainter painter(viewport());
+      QColor color = palette().color(QPalette::PlaceholderText);
+      painter.setPen(color);
+      QRect area = viewport()->rect();
+      const int top = model()->rowCount() > 0 ? visualRect(model()->index(model()->rowCount() - 1, 0)).bottom() : 0;
+      area.setTop(qMax(top, 0) + 24);
+      area.setHeight(qMin(area.height(), 120));
+      painter.drawText(area, Qt::AlignHCenter | Qt::AlignTop | Qt::TextWordWrap, message);
+    }
+  }
   if (m_dropRow < 0 || !model())
     return;
   const QModelIndex index = model()->index(m_dropRow, 0);

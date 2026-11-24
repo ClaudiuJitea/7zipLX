@@ -27,3 +27,18 @@ OperationResult compressFiles(const QStringList &files,
                               const CompressOptions &options,
                               ProgressState *progress,
                               PromptDispatcher *prompts);
+
+// Target of the quick "Add to <name>.7z" / "Add to <name>.zip" actions,
+// following 7-Zip's naming: one item gives its own name (a file without its
+// last extension, a folder as is); several items or no selection give the
+// name of the folder that contains them.  With no selection, the current
+// folder itself is compressed next to it.
+struct QuickArchiveTarget
+{
+  QStringList inputs;
+  QString archivePath;
+  QString baseName;
+};
+
+QuickArchiveTarget quickArchiveTarget(const QStringList &selected, const QString &currentDir,
+                                      const QString &extension);

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(7zipLX VERSION 0.5.2 LANGUAGES C CXX)
+project(7zipLX VERSION 0.5.3 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -178,6 +178,8 @@ add_library(7ziplx_backend STATIC
   src/backend/SevenZipEngine.cpp
   src/backend/ArchiveSession.cpp
   src/backend/CompressOperation.cpp
+  src/backend/ArchiveTypes.cpp
+  src/backend/ShellCommand.cpp
   src/backend/LocalFileOperation.cpp
   src/backend/ArchiveWriteBack.cpp
   src/backend/MessageDialog.cpp
@@ -207,6 +209,8 @@ add_library(7ziplx_ui STATIC
   src/app/ExternalToolController.cpp
   src/app/HashController.cpp
   src/app/TransferController.cpp
+  src/app/CommandLine.cpp
+  src/app/DesktopIntegration.cpp
   src/models/LocalFsModel.cpp
   src/models/RootModel.cpp
   src/models/ArchiveFolderModel.cpp
@@ -223,6 +227,7 @@ add_library(7ziplx_ui STATIC
   src/ui/widgets/PanelTransfer.cpp
 )
 target_link_libraries(7ziplx_ui PUBLIC 7ziplx_backend Qt6::Widgets Qt6::Concurrent)
+target_compile_definitions(7ziplx_ui PUBLIC SEVENZIPLX_VERSION="${PROJECT_VERSION}")
 
 add_executable(7ziplx src/main.cpp)
 target_link_libraries(7ziplx PRIVATE 7ziplx_ui)
@@ -248,6 +253,29 @@ if(BUILD_TESTING)
     set_tests_properties(archive_operations PROPERTIES
       ENVIRONMENT "QT_QPA_PLATFORM=offscreen;ASAN_OPTIONS=detect_leaks=0:halt_on_error=1"
       TIMEOUT 300)
+
+    add_executable(7ziplx_ui_tests tests/test_ui_navigation.cpp)
+    target_link_libraries(7ziplx_ui_tests PRIVATE 7ziplx_ui Qt6::Test)
+    add_test(NAME ui_navigation COMMAND 7ziplx_ui_tests)
+    set_tests_properties(ui_navigation PROPERTIES
+      ENVIRONMENT "QT_QPA_PLATFORM=offscreen;ASAN_OPTIONS=detect_leaks=0:halt_on_error=1"
+      TIMEOUT 300)
+
+    add_executable(7ziplx_mainwindow_tests tests/test_mainwindow_actions.cpp)
+    target_link_libraries(7ziplx_mainwindow_tests PRIVATE 7ziplx_ui Qt6::Test)
+    target_compile_definitions(7ziplx_mainwindow_tests PRIVATE SEVENZIPLX_BINARY="$<TARGET_FILE:7ziplx>")
+    add_dependencies(7ziplx_mainwindow_tests 7ziplx)
+    add_test(NAME mainwindow_actions COMMAND 7ziplx_mainwindow_tests)
+    set_tests_properties(mainwindow_actions PROPERTIES
+      ENVIRONMENT "QT_QPA_PLATFORM=offscreen;ASAN_OPTIONS=detect_leaks=0:halt_on_error=1"
+      TIMEOUT 300)
+
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+      add_test(NAME nautilus_extension
+               COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_nautilus_extension.py
+                       ${CMAKE_CURRENT_SOURCE_DIR}/packaging/nautilus/7ziplx.py)
+    endif()
   else()
     message(STATUS "Qt6::Test not found; 7zipLX tests are disabled")
   endif()
@@ -260,14 +288,16 @@ if(SEVENZIP_EXTERNAL_CODECS)
   install(FILES "${SEVENZIP_PLUGIN}" DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 install(FILES packaging/7ziplx.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
-install(FILES packaging/servicemenus/7ziplx-servicemenu.desktop
+# File manager context menus.  GNOME Files uses the nautilus-python extension
+# (python3-nautilus); the GNOME desktop reads per-user scripts, which 7zipLX
+# installs into ~/.local/share/nautilus/scripts/7zipLX on start.
+install(FILES packaging/nautilus/7ziplx.py
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/nautilus-python/extensions)
+install(FILES packaging/servicemenus/7ziplx-archive.desktop
+              packaging/servicemenus/7ziplx-compress.desktop
         DESTINATION ${CMAKE_INSTALL_DATADIR}/kio/servicemenus)
-install(FILES packaging/nemo-actions/7ziplx-extract-here.nemo_action
-              packaging/nemo-actions/7ziplx-compress.nemo_action
-        DESTINATION ${CMAKE_INSTALL_DATADIR}/nemo/actions)
-install(PROGRAMS packaging/nautilus-scripts/Extract\ Here
-                 packaging/nautilus-scripts/Compress\ to\ 7z
-        DESTINATION ${CMAKE_INSTALL_DATADIR}/nautilus/scripts)
+file(GLOB SEVENZIPLX_NEMO_ACTIONS ${CMAKE_CURRENT_SOURCE_DIR}/packaging/nemo-actions/*.nemo_action)
+install(FILES ${SEVENZIPLX_NEMO_ACTIONS} DESTINATION ${CMAKE_INSTALL_DATADIR}/nemo/actions)
 install(PROGRAMS scripts/install-file-manager-actions.sh
                  scripts/update-translations.sh
         DESTINATION ${CMAKE_INSTALL_DATADIR}/7ziplx)

@@ -111,10 +111,9 @@ CompressDialog::CompressDialog(const QStringList &files, const QString &defaultD
   connect(browseButton, &QPushButton::clicked, this, &CompressDialog::browse);
   connect(m_format, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &CompressDialog::formatChanged);
 
-  QString base = QFileInfo(files.isEmpty() ? QStringLiteral("archive") : files.first()).completeBaseName();
-  if (base.isEmpty()) base = QStringLiteral("archive");
+  // Same default name as the quick "Add to <name>.7z" action.
   const QString dir = defaultDir.isEmpty() ? QDir::currentPath() : defaultDir;
-  m_archivePath->setText(dir + QLatin1Char('/') + base + QStringLiteral(".7z"));
+  m_archivePath->setText(quickArchiveTarget(files, dir, QStringLiteral("7z")).archivePath);
   formatChanged();
 }
 

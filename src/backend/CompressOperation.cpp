@@ -415,3 +415,42 @@ OperationResult compressFiles(const QStringList &files,
   }
   return result;
 }
+
+QuickArchiveTarget quickArchiveTarget(const QStringList &selected, const QString &currentDir,
+                                      const QString &extension)
+{
+  QuickArchiveTarget target;
+  const QFileInfo current(currentDir);
+  QString targetDir = current.absoluteFilePath();
+  if (selected.isEmpty())
+  {
+    target.inputs << current.absoluteFilePath();
+    targetDir = current.absolutePath();
+    target.baseName = current.fileName();
+  }
+  else
+  {
+    for (const QString &path : selected)
+      target.inputs << QFileInfo(path).absoluteFilePath();
+    if (target.inputs.size() == 1)
+    {
+      const QFileInfo item(target.inputs.first());
+      target.baseName = item.isDir() ? item.fileName() : item.completeBaseName();
+      if (target.baseName.isEmpty())
+        target.baseName = item.fileName(); // dot files such as ".config"
+    }
+    else
+    {
+      target.baseName = current.fileName();
+    }
+  }
+  if (targetDir.isEmpty())
+    targetDir = current.absoluteFilePath();
+  if (target.baseName.isEmpty() || target.baseName == QLatin1String("."))
+    target.baseName = QStringLiteral("archive");
+  QString dir = targetDir;
+  if (!dir.endsWith(QLatin1Char('/')))
+    dir += QLatin1Char('/');
+  target.archivePath = dir + target.baseName + QLatin1Char('.') + extension;
+  return target;
+}

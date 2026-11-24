@@ -74,7 +74,7 @@ void HashController::hashSelection(FilePanel *panel, const QString &method)
   QVector<int> rows = panel->selectedArchiveRows();
   if (rows.isEmpty())
   {
-    const int row = panel->currentRow();
+    const int row = panel->currentArchiveItem();
     if (row >= 0)
       rows << row;
   }

@@ -6,8 +6,16 @@ Implemented in the current MVP:
 - `io.github.claudiujitea.7zipLX.appdata.xml` — AppStream metadata.
 - hicolor icons at 16, 24, 32, 48, 64, 128 and 256 px, generated from `icon/7ziplx-icon.png`.
 - CMake install rules for the binary, `lib7zcore.so`, man page, desktop entry, desktop actions, AppStream metadata, icons, `NOTICE.md` and 7-Zip/unRAR licenses.
-- KDE/Dolphin service menu, Nemo actions, Nautilus scripts and the per-user
-  file-manager action installer.
+- File manager context menus (a "7-Zip" submenu whose entries depend on the
+  selection: extract/test/open for archives, compress for anything):
+  - GNOME Files: `nautilus/7ziplx.py`, a nautilus-python extension (needs
+    `python3-nautilus`; restart Files with `nautilus -q` after installing).
+  - GNOME desktop (Desktop Icons NG) and Files: a per-user **Scripts → 7zipLX**
+    menu in `~/.local/share/nautilus/scripts/7zipLX`, written by 7zipLX on
+    start (Options → Integration, or `7ziplx --install-menus` / `--remove-menus`).
+  - KDE/Dolphin: `servicemenus/7ziplx-archive.desktop` and `7ziplx-compress.desktop`.
+  - Nemo: `nemo-actions/*.nemo_action`.
+  - Thunar: `scripts/install-file-manager-actions.sh` (per user, see `thunar/`).
 - Flatpak manifest in `flatpak/`.
 
 Install staging:
@@ -23,9 +31,9 @@ desktop-file-validate packaging/7ziplx.desktop
 appstreamcli validate packaging/io.github.claudiujitea.7zipLX.appdata.xml
 ```
 
-The KDE service menu uses KDE-specific `ServiceTypes`, `X-KDE-*` and
+The KDE service menus use KDE-specific `ServiceTypes`, `X-KDE-*` and
 `all/allfiles` keys, so `desktop-file-validate` is not the right validator for
-that file; install it through the packaging rules or the per-user script.
+those files; install it through the packaging rules or the per-user script.
 
 AppStream reports only informational notices for the number-prefixed component name; the homepage is the live GitHub repository.
 
@@ -35,7 +43,7 @@ AppStream reports only informational notices for the number-prefixed component n
 ./scripts/build-deb.sh
 ```
 
-The package is written to `dist/7ziplx_0.5.2-1_amd64.deb` by default. It
+The package is written to `dist/7ziplx_0.5.3-1_amd64.deb` by default. It
 contains the executable, `lib7zcore.so`, the optional `7z.so` engine module,
 desktop entry, AppStream metadata, hicolor icons, man page, documentation and
 7-Zip/unRAR notices. The script generates `Depends` with `dpkg-shlibdeps`,
@@ -51,7 +59,7 @@ needed.
 ./scripts/build-appimage.sh
 ```
 
-The AppImage is written to `dist/7zipLX-0.5.2-x86_64.AppImage` by default. It
+The AppImage is written to `dist/7zipLX-0.5.3-x86_64.AppImage` by default. It
 bundles the release binary, `lib7zcore.so`, `7z.so` and the required Qt 6
 libraries/plugins. Build tools are downloaded into `build-appimage/tools/` on
 first use.

@@ -8,12 +8,15 @@
 #include <QTemporaryDir>
 
 #include "backend/ArchiveSession.h"
+#include "backend/ArchiveTypes.h"
 #include "backend/ArchiveWriteBack.h"
 #include "backend/CompressOperation.h"
 #include "backend/HashOperation.h"
 #include "backend/LocalFileOperation.h"
+#include "backend/ProgressState.h"
 #include "backend/PromptDispatcher.h"
 #include "backend/SevenZipEngine.h"
+#include "backend/ShellCommand.h"
 
 class FakePromptDispatcher final : public PromptDispatcher
 {
@@ -97,6 +100,15 @@ private slots:
   void pathTraversalIsContained();
   void streamedArchiveHash();
   void localCopyAndMove();
+  void quickArchiveNaming_data();
+  void quickArchiveNaming();
+  void quickArchiveNoSelection();
+  void quickCompressRoundTrip();
+  void quickCompressUpdatesExisting();
+  void archiveTypesAndFolderNames_data();
+  void archiveTypesAndFolderNames();
+  void splitAndCombineStream();
+  void shellCommandSplitting();
 
 private:
   QString makeArchive(const QString &name, const QStringList &sourcePaths,
@@ -533,6 +545,218 @@ void ArchiveOperationsTest::localCopyAndMove()
   QVERIFY(!QFileInfo::exists(source));
   QVERIFY(QFileInfo::exists(moved + QStringLiteral("/") + QFileInfo(source).fileName() +
                             QStringLiteral("/one.txt")));
+}
+
+static QStringList archiveItemNames(const QString &archive, PromptDispatcher *prompts)
+{
+  ArchiveSession session;
+  QString error;
+  if (!session.open(archive, QString(), nullptr, prompts, &error))
+    return {QStringLiteral("<open failed: %1>").arg(error)};
+  QStringList names;
+  for (int i = 0; i < session.itemCount(); ++i)
+    names << session.item(i).name;
+  names.sort();
+  return names;
+}
+
+void ArchiveOperationsTest::quickArchiveNaming_data()
+{
+  QTest::addColumn<QStringList>("relativeInputs");
+  QTest::addColumn<QString>("extension");
+  QTest::addColumn<QString>("expectedName");
+
+  QTest::newRow("file") << QStringList{QStringLiteral("report.txt")} << QStringLiteral("7z")
+                        << QStringLiteral("report.7z");
+  QTest::newRow("last extension only")
+      << QStringList{QStringLiteral("7ziplx_0.5.0-1_amd64.deb")} << QStringLiteral("zip")
+      << QStringLiteral("7ziplx_0.5.0-1_amd64.zip");
+  QTest::newRow("double extension") << QStringList{QStringLiteral("data.tar.gz")}
+                                    << QStringLiteral("7z") << QStringLiteral("data.tar.7z");
+  QTest::newRow("dot file") << QStringList{QStringLiteral(".profile")} << QStringLiteral("7z")
+                            << QStringLiteral(".profile.7z");
+  QTest::newRow("folder keeps dots") << QStringList{QStringLiteral("lib.d")}
+                                     << QStringLiteral("7z") << QStringLiteral("lib.d.7z");
+  QTest::newRow("several items use the folder name")
+      << QStringList{QStringLiteral("report.txt"), QStringLiteral("lib.d")}
+      << QStringLiteral("zip") << QStringLiteral("work.zip");
+}
+
+void ArchiveOperationsTest::quickArchiveNaming()
+{
+  QFETCH(QStringList, relativeInputs);
+  QFETCH(QString, extension);
+  QFETCH(QString, expectedName);
+
+  const QString work = testDir() + QStringLiteral("/work");
+  QVERIFY(writeFile(work + QStringLiteral("/report.txt"), "r"));
+  QVERIFY(writeFile(work + QStringLiteral("/7ziplx_0.5.0-1_amd64.deb"), "d"));
+  QVERIFY(writeFile(work + QStringLiteral("/data.tar.gz"), "g"));
+  QVERIFY(writeFile(work + QStringLiteral("/.profile"), "p"));
+  QVERIFY(writeFile(work + QStringLiteral("/lib.d/inner.txt"), "i"));
+
+  QStringList inputs;
+  for (const QString &name : relativeInputs)
+    inputs << work + QLatin1Char('/') + name;
+  const QuickArchiveTarget target = quickArchiveTarget(inputs, work, extension);
+  QCOMPARE(target.archivePath, work + QLatin1Char('/') + expectedName);
+  QCOMPARE(target.inputs, inputs);
+}
+
+void ArchiveOperationsTest::quickArchiveNoSelection()
+{
+  const QString parent = testDir();
+  const QString work = parent + QStringLiteral("/project");
+  QVERIFY(writeFile(work + QStringLiteral("/a.txt"), "a"));
+  const QuickArchiveTarget target = quickArchiveTarget({}, work, QStringLiteral("7z"));
+  QCOMPARE(target.inputs, QStringList{work});
+  QCOMPARE(target.archivePath, parent + QStringLiteral("/project.7z"));
+  QCOMPARE(target.baseName, QStringLiteral("project"));
+}
+
+void ArchiveOperationsTest::quickCompressRoundTrip()
+{
+  for (const QString &format : {QStringLiteral("7z"), QStringLiteral("zip")})
+  {
+    const QString work = testDir() + QStringLiteral("/batch");
+    QVERIFY(writeFile(work + QStringLiteral("/one.txt"), "one"));
+    QVERIFY(writeFile(work + QStringLiteral("/two.bin"), QByteArray(4096, 'x')));
+    QVERIFY(writeFile(work + QStringLiteral("/folder/three.txt"), "three"));
+
+    // A single selected file becomes <name>.<ext> holding just that file.
+    const QuickArchiveTarget single =
+        quickArchiveTarget({work + QStringLiteral("/one.txt")}, work, format);
+    CompressOptions options;
+    options.archivePath = single.archivePath;
+    options.formatIndex = SevenZipEngine::instance().formatIndex(format);
+    OperationResult result = compressFiles(single.inputs, options, nullptr, &m_prompts);
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QCOMPARE(QFileInfo(single.archivePath).fileName(), QStringLiteral("one.") + format);
+    QCOMPARE(archiveItemNames(single.archivePath, &m_prompts), QStringList{QStringLiteral("one.txt")});
+
+    // Several selected items all go into <folder>.<ext>.
+    const QuickArchiveTarget several = quickArchiveTarget(
+        {work + QStringLiteral("/one.txt"), work + QStringLiteral("/two.bin"),
+         work + QStringLiteral("/folder")},
+        work, format);
+    options.archivePath = several.archivePath;
+    result = compressFiles(several.inputs, options, nullptr, &m_prompts);
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QCOMPARE(QFileInfo(several.archivePath).fileName(), QStringLiteral("batch.") + format);
+    const QStringList expected = {QStringLiteral("folder"), QStringLiteral("one.txt"),
+                                  QStringLiteral("two.bin")};
+    QCOMPARE(archiveItemNames(several.archivePath, &m_prompts), expected);
+  }
+}
+
+void ArchiveOperationsTest::quickCompressUpdatesExisting()
+{
+  // The quick action's prompt says it adds to an existing archive; make sure
+  // that is what the engine does (old items kept, new ones added).
+  const QString work = testDir();
+  QVERIFY(writeFile(work + QStringLiteral("/old.txt"), "old"));
+  QVERIFY(writeFile(work + QStringLiteral("/new.txt"), "new"));
+  CompressOptions options;
+  options.archivePath = work + QStringLiteral("/bundle.7z");
+  options.formatIndex = SevenZipEngine::instance().formatIndex(QStringLiteral("7z"));
+  OperationResult result =
+      compressFiles({work + QStringLiteral("/old.txt")}, options, nullptr, &m_prompts);
+  QVERIFY2(result.ok, qPrintable(result.error));
+  result = compressFiles({work + QStringLiteral("/new.txt")}, options, nullptr, &m_prompts);
+  QVERIFY2(result.ok, qPrintable(result.error));
+  const QStringList expected = {QStringLiteral("new.txt"), QStringLiteral("old.txt")};
+  QCOMPARE(archiveItemNames(options.archivePath, &m_prompts), expected);
+}
+
+void ArchiveOperationsTest::archiveTypesAndFolderNames_data()
+{
+  QTest::addColumn<QString>("name");
+  QTest::addColumn<bool>("archive");
+  QTest::addColumn<QString>("folder");
+  QTest::newRow("7z") << "photos.7z" << true << "photos";
+  QTest::newRow("tar.gz") << "backup.tar.gz" << true << "backup";
+  QTest::newRow("tgz upper") << "BACKUP.TGZ" << true << "BACKUP";
+  QTest::newRow("deb") << "7ziplx_0.5.0-1_amd64.deb" << true << "7ziplx_0.5.0-1_amd64";
+  QTest::newRow("rpm") << "tool-1.2.x86_64.rpm" << true << "tool-1.2.x86_64";
+  QTest::newRow("jar") << "app.jar" << true << "app";
+  QTest::newRow("split 7z") << "disk.7z.001" << true << "disk";
+  QTest::newRow("rar parts") << "movie.part1.rar" << true << "movie";
+  QTest::newRow("dots kept") << "report.v2.zip" << true << "report.v2";
+  QTest::newRow("tar.zst") << "src.tar.zst" << true << "src";
+  QTest::newRow("text") << "notes.txt" << false << "notes.txt";
+  QTest::newRow("exe") << "setup.exe" << false << "setup.exe";
+  QTest::newRow("docx") << "letter.docx" << false << "letter.docx";
+  QTest::newRow("no ext") << "README" << false << "README";
+}
+
+void ArchiveOperationsTest::archiveTypesAndFolderNames()
+{
+  QFETCH(QString, name);
+  QFETCH(bool, archive);
+  QFETCH(QString, folder);
+  QCOMPARE(isArchiveFileName(name), archive);
+  if (archive)
+    QCOMPARE(archiveFolderName(QStringLiteral("/data/") + name), folder);
+}
+
+void ArchiveOperationsTest::splitAndCombineStream()
+{
+  const QString dir = testDir();
+  QByteArray data;
+  for (int i = 0; i < 2500000; ++i)
+    data.append(char(i * 7));
+  const QString source = dir + QStringLiteral("/blob.bin");
+  QVERIFY(writeFile(source, data));
+  QCOMPARE(splitVolumeCount(data.size(), 1 << 20), 3);
+  QCOMPARE(splitVolumeCount(0, 1 << 20), 1);
+
+  OperationResult split = splitFile(source, 1 << 20, nullptr);
+  QVERIFY2(split.ok, qPrintable(split.error));
+  QCOMPARE(split.files, quint64(3));
+  QCOMPARE(QFileInfo(splitVolumeName(source, 1)).size(), qint64(1 << 20));
+  QCOMPARE(QFileInfo(splitVolumeName(source, 3)).size(), qint64(2500000 - 2 * (1 << 20)));
+
+  // Existing volumes are never overwritten.
+  split = splitFile(source, 1 << 20, nullptr);
+  QVERIFY(!split.ok);
+  QVERIFY(split.error.contains(QStringLiteral("already exists")));
+
+  const QString joined = dir + QStringLiteral("/joined.bin");
+  OperationResult combined = combineFiles(splitVolumeName(source, 1), joined, nullptr);
+  QVERIFY2(combined.ok, qPrintable(combined.error));
+  QCOMPARE(readFile(joined), data);
+
+  // The output cannot replace an existing file or one of the volumes.
+  combined = combineFiles(splitVolumeName(source, 1), joined, nullptr);
+  QVERIFY(!combined.ok);
+  combined = combineFiles(splitVolumeName(source, 1), splitVolumeName(source, 2), nullptr);
+  QVERIFY(!combined.ok);
+  QCOMPARE(QFileInfo(splitVolumeName(source, 2)).size(), qint64(1 << 20));
+
+  // Canceling removes the partial output.
+  ProgressState canceled;
+  canceled.cancel();
+  const QString partial = dir + QStringLiteral("/partial.bin");
+  combined = combineFiles(splitVolumeName(source, 1), partial, &canceled);
+  QVERIFY(!combined.ok);
+  QVERIFY(combined.canceled);
+  QVERIFY(!QFileInfo::exists(partial));
+}
+
+void ArchiveOperationsTest::shellCommandSplitting()
+{
+  QCOMPARE(splitShellCommand(QStringLiteral("xdg-open")), QStringList{QStringLiteral("xdg-open")});
+  QCOMPARE(splitShellCommand(QStringLiteral("  code   --wait ")),
+           (QStringList{QStringLiteral("code"), QStringLiteral("--wait")}));
+  QCOMPARE(splitShellCommand(QStringLiteral("sh -c 'cat \"$0\" > /tmp/x'")),
+           (QStringList{QStringLiteral("sh"), QStringLiteral("-c"), QStringLiteral("cat \"$0\" > /tmp/x")}));
+  QCOMPARE(splitShellCommand(QStringLiteral("\"/opt/My Editor/bin/edit\" -n")),
+           (QStringList{QStringLiteral("/opt/My Editor/bin/edit"), QStringLiteral("-n")}));
+  QCOMPARE(splitShellCommand(QStringLiteral("a\\ b \"q\\\"x\" ''")),
+           (QStringList{QStringLiteral("a b"), QStringLiteral("q\"x"), QString()}));
+  bool ok = true;
+  QVERIFY(splitShellCommand(QStringLiteral("broken 'quote"), &ok).isEmpty());
+  QVERIFY(!ok);
 }
 
 QTEST_MAIN(ArchiveOperationsTest)

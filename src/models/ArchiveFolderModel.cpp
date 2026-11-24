@@ -2,6 +2,8 @@
 
 #include <QLocale>
 #include <QFileIconProvider>
+#include <QFileInfo>
+#include <QMimeDatabase>
 
 ArchiveFolderModel::ArchiveFolderModel(QObject *parent) : QAbstractTableModel(parent) {}
 
@@ -58,11 +60,11 @@ void ArchiveFolderModel::refresh()
   endResetModel();
 }
 
-bool ArchiveFolderModel::enter(int row)
+bool ArchiveFolderModel::enter(int item)
 {
-  if (!m_session || row < 0 || row >= m_entries.size())
+  if (!m_session || item < 0 || item >= m_entries.size())
     return false;
-  if (!m_session->enter(row))
+  if (!m_session->enter(item))
     return false;
   refresh();
   emit pathChanged(path());
@@ -90,12 +92,38 @@ bool ArchiveFolderModel::root()
 QString ArchiveFolderModel::path() const { return m_session ? m_session->currentPath() : QString(); }
 QStringList ArchiveFolderModel::breadcrumbs() const { return m_session ? m_session->breadcrumbs() : QStringList(); }
 
-const ArchiveEntryInfo &ArchiveFolderModel::entry(int row) const
+const ArchiveEntryInfo &ArchiveFolderModel::entry(int item) const
 {
   static const ArchiveEntryInfo empty;
-  if (row < 0 || row >= m_entries.size())
+  if (item < 0 || item >= m_entries.size())
     return empty;
-  return m_entries.at(row);
+  return m_entries.at(item);
+}
+
+bool ArchiveFolderModel::hasParentRow() const { return m_showParentRow && m_session && m_session->isOpen(); }
+
+void ArchiveFolderModel::setShowParentRow(bool show)
+{
+  if (m_showParentRow == show)
+    return;
+  beginResetModel();
+  m_showParentRow = show;
+  endResetModel();
+}
+
+bool ArchiveFolderModel::isParentRow(int row) const { return row == 0 && hasParentRow(); }
+
+int ArchiveFolderModel::itemForRow(int row) const
+{
+  const int item = hasParentRow() ? row - 1 : row;
+  return (item >= 0 && item < m_entries.size()) ? item : -1;
+}
+
+int ArchiveFolderModel::rowForItem(int item) const
+{
+  if (item < 0 || item >= m_entries.size())
+    return -1;
+  return hasParentRow() ? item + 1 : item;
 }
 
 QVector<int> ArchiveFolderModel::allRows() const
@@ -107,14 +135,76 @@ QVector<int> ArchiveFolderModel::allRows() const
   return rows;
 }
 
-int ArchiveFolderModel::rowCount(const QModelIndex &parent) const { return parent.isValid() ? 0 : m_entries.size(); }
+int ArchiveFolderModel::rowCount(const QModelIndex &parent) const
+{
+  if (parent.isValid())
+    return 0;
+  return m_entries.size() + (hasParentRow() ? 1 : 0);
+}
 int ArchiveFolderModel::columnCount(const QModelIndex &parent) const { return parent.isValid() ? 0 : ColumnCount; }
+
+QIcon ArchiveFolderModel::iconForName(const QString &name) const
+{
+  // Same look as the local file list: the theme icon for the file type.
+  const QString suffix = QFileInfo(name).suffix().toLower();
+  const QString key = QStringLiteral("ext:") + suffix;
+  auto it = m_icons.find(key);
+  if (it != m_icons.end())
+    return it.value();
+  static const QMimeDatabase mimes;
+  const QMimeType mime = mimes.mimeTypeForFile(name, QMimeDatabase::MatchExtension);
+  QIcon result = QIcon::fromTheme(mime.iconName());
+  if (result.isNull())
+    result = QIcon::fromTheme(mime.genericIconName());
+  if (result.isNull())
+    result = icon(false);
+  m_icons.insert(key, result);
+  return result;
+}
+
+QIcon ArchiveFolderModel::icon(bool dir) const
+{
+  const QString key = dir ? QStringLiteral("dir") : QStringLiteral("file");
+  auto it = m_icons.find(key);
+  if (it != m_icons.end())
+    return it.value();
+  static const QFileIconProvider provider;
+  const QIcon result = dir
+      ? QIcon::fromTheme(QStringLiteral("folder"), provider.icon(QFileIconProvider::Folder))
+      : QIcon::fromTheme(QStringLiteral("text-x-generic"), provider.icon(QFileIconProvider::File));
+  m_icons.insert(key, result);
+  return result;
+}
 
 QVariant ArchiveFolderModel::data(const QModelIndex &index, int role) const
 {
-  if (!index.isValid() || index.row() < 0 || index.row() >= m_entries.size())
+  if (!index.isValid())
     return QVariant();
-  const ArchiveEntryInfo &e = m_entries.at(index.row());
+  if (isParentRow(index.row()))
+  {
+    switch (role)
+    {
+      case Qt::DisplayRole:
+        if (index.column() == ColumnName) return QStringLiteral("..");
+        if (index.column() == ColumnSize) return ArchiveFolderModel::tr("<DIR>");
+        return QVariant();
+      case Qt::DecorationRole:
+        if (index.column() == ColumnName)
+          return icon(true);
+        return QVariant();
+      case Qt::TextAlignmentRole:
+        if (index.column() == ColumnSize) return int(Qt::AlignRight | Qt::AlignVCenter);
+        return QVariant();
+      case Qt::ToolTipRole: return ArchiveFolderModel::tr("Up one level");
+      case Qt::UserRole: return QStringLiteral("..");
+      case Qt::UserRole + 1: return true;
+      default: return QVariant();
+    }
+  }
+  const int item = itemForRow(index.row());
+  if (item < 0)
+    return QVariant();
+  const ArchiveEntryInfo &e = m_entries.at(item);
   if (role == Qt::DisplayRole)
   {
     switch (index.column())
@@ -131,14 +221,7 @@ QVariant ArchiveFolderModel::data(const QModelIndex &index, int role) const
   }
   else if (role == Qt::DecorationRole && index.column() == ColumnName)
   {
-    const QString key = e.isDir ? QStringLiteral("dir") : QStringLiteral("file");
-    auto it = m_icons.find(key);
-    if (it != m_icons.end())
-      return it.value();
-    QIcon icon = e.isDir ? QIcon::fromTheme(QStringLiteral("folder"), QIcon::fromTheme(QStringLiteral("inode-directory")))
-                         : QIcon::fromTheme(QStringLiteral("text-x-generic"));
-    m_icons.insert(key, icon);
-    return icon;
+    return e.isDir ? icon(true) : iconForName(e.name);
   }
   else if (role == Qt::TextAlignmentRole && (index.column() == ColumnSize || index.column() == ColumnPacked || index.column() == ColumnModified))
   {
@@ -179,5 +262,7 @@ QVariant ArchiveFolderModel::headerData(int section, Qt::Orientation orientation
 Qt::ItemFlags ArchiveFolderModel::flags(const QModelIndex &index) const
 {
   if (!index.isValid()) return Qt::NoItemFlags;
+  if (isParentRow(index.row()))
+    return Qt::ItemIsEnabled | Qt::ItemIsSelectable;
   return Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsDragEnabled;
 }

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="${VERSION:-0.5.2}"
+VERSION="${VERSION:-0.5.3}"
 ARCH="${ARCH:-x86_64}"
 BUILD_DIR="${BUILD_DIR:-$ROOT/build-release}"
 APPDIR="${APPDIR:-$ROOT/build-appimage/AppDir}"

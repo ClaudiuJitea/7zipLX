@@ -1,8 +1,0 @@
-[Nemo Action]
-Name=Compress to 7z
-Comment=Create a 7z archive from the selection
-Exec=7ziplx --compress %F
-Icon-Name=archive-insert
-Selection=m
-Extensions=any;
-Quote=double

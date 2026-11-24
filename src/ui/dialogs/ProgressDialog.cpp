@@ -30,7 +30,7 @@ ProgressDialog::ProgressDialog(ProgressState *state, const QString &title, QWidg
   layout->setSpacing(12);
 
   m_title = new QLabel(title, this);
-  m_title->setObjectName(ProgressDialog::tr("dialogHeading"));
+  m_title->setObjectName(QStringLiteral("dialogHeading"));
   layout->addWidget(m_title);
 
   m_status = new QLabel(ProgressDialog::tr("Preparing..."), this);

@@ -163,20 +163,35 @@ The application follows the system light/dark preference by default and also off
 ## Command line and desktop integration
 
 ```bash
-7ziplx --extract-here archive.7z
+7ziplx --extract-here archive.7z          # into the archive's folder
+7ziplx --extract-to-folder a.zip b.7z     # each into its own folder
 7ziplx --extract-to /path/to/output archive.zip
-7ziplx --compress file-or-folder
+7ziplx --extract archive.7z               # Extract dialog
+7ziplx --test archive.7z
+7ziplx --compress a.txt b.txt             # one archive: <folder>.7z
+7ziplx --compress --format zip photos/    # photos.zip
 7ziplx --compress-to output.7z file1 file2
+7ziplx --add file1 folder2                # Add to Archive dialog
 ```
 
 These modes show the normal progress dialog, can prompt for passwords and
-overwrites, and exit without opening the main window. They are used by the
-optional file-manager actions:
+overwrites, and exit without opening the main window.
 
-```bash
-./scripts/install-file-manager-actions.sh
-```
+### Right-click menus
 
-This installs a Dolphin/KDE service menu, Nemo actions, Nautilus scripts and
-(per-user) Thunar custom actions, or use the system packages. A Flatpak manifest
+Selecting files on the desktop or in a file manager offers a **7-Zip** menu
+whose entries depend on the selection: archives get *Open in 7zipLX*,
+*Extract Files…*, *Extract Here*, *Extract to "name/"* and *Test Archive*;
+anything else gets *Add to Archive…* and *Add to "name.7z"* / *"name.zip"*.
+
+- **GNOME desktop and Files:** 7zipLX keeps a **Scripts → 7zipLX** menu in
+  `~/.local/share/nautilus/scripts/7zipLX` (turn it off under
+  *Options → Integration*, or run `7ziplx --remove-menus`).
+- **GNOME Files windows:** install `python3-nautilus` for a 7-Zip submenu
+  directly in the right-click menu, then restart Files with `nautilus -q`.
+- **Dolphin, Nemo:** installed with the package.
+- **Thunar**, or a build that was not installed from the package:
+  `./scripts/install-file-manager-actions.sh` (add `--remove` to undo).
+
+A Flatpak manifest
 is available under `packaging/flatpak/`.

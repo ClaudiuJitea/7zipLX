@@ -1,3 +1,0 @@
-#!/bin/sh
-# Nautilus script: extract every selected archive next to itself.
-exec 7ziplx --extract-here "$@"

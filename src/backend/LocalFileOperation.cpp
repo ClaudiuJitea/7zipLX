@@ -354,3 +354,202 @@ OperationResult copyLocalItems(const QStringList &sources, const QString &target
   }
   return result;
 }
+
+namespace {
+
+constexpr qint64 kStreamBuffer = 1 << 20;
+
+bool streamCopy(QFile &in, QFile &out, qint64 limit, ProgressState *progress, quint64 *done,
+                QString *error)
+{
+  QByteArray buffer;
+  qint64 remaining = limit;
+  while (remaining != 0 && !in.atEnd())
+  {
+    if (progress && progress->isCanceled())
+      return false;
+    const qint64 want = remaining < 0 ? kStreamBuffer : qMin(kStreamBuffer, remaining);
+    buffer = in.read(want);
+    if (buffer.isEmpty())
+    {
+      if (in.error() != QFileDevice::NoError)
+      {
+        *error = QObject::tr("Cannot read %1: %2").arg(in.fileName(), in.errorString());
+        return false;
+      }
+      break;
+    }
+    if (out.write(buffer) != buffer.size())
+    {
+      *error = QObject::tr("Cannot write %1: %2").arg(out.fileName(), out.errorString());
+      return false;
+    }
+    if (remaining > 0)
+      remaining -= buffer.size();
+    *done += quint64(buffer.size());
+    if (progress)
+      progress->setCompleted(*done);
+  }
+  return true;
+}
+
+} // namespace
+
+QString splitVolumeName(const QString &source, int part)
+{
+  return source + QLatin1Char('.') + QStringLiteral("%1").arg(part, 3, 10, QLatin1Char('0'));
+}
+
+int splitVolumeCount(qint64 fileSize, qint64 volumeSize)
+{
+  if (volumeSize <= 0)
+    return 1;
+  return int(qMax<qint64>(1, (fileSize + volumeSize - 1) / volumeSize));
+}
+
+OperationResult splitFile(const QString &source, qint64 volumeSize, ProgressState *progress)
+{
+  OperationResult result;
+  const QFileInfo info(source);
+  if (!info.isFile())
+  {
+    result.error = QObject::tr("Select one file to split.");
+    return result;
+  }
+  if (volumeSize <= 0)
+  {
+    result.error = QObject::tr("The volume size must be greater than zero.");
+    return result;
+  }
+  const int parts = splitVolumeCount(info.size(), volumeSize);
+  if (parts > 999)
+  {
+    result.error = QObject::tr("This would create %1 volumes; choose a larger volume size.").arg(parts);
+    return result;
+  }
+  for (int part = 1; part <= parts; ++part)
+  {
+    if (QFileInfo::exists(splitVolumeName(source, part)))
+    {
+      result.error = QObject::tr("%1 already exists.").arg(QFileInfo(splitVolumeName(source, part)).fileName());
+      return result;
+    }
+  }
+  QFile in(source);
+  if (!in.open(QIODevice::ReadOnly))
+  {
+    result.error = QObject::tr("Cannot open %1: %2").arg(source, in.errorString());
+    return result;
+  }
+  if (progress)
+  {
+    progress->setStatus(QObject::tr("Splitting %1").arg(info.fileName()));
+    progress->setTotals(quint64(info.size()), quint64(parts));
+  }
+  quint64 done = 0;
+  QStringList written;
+  for (int part = 1; part <= parts; ++part)
+  {
+    const QString name = splitVolumeName(source, part);
+    QFile out(name);
+    if (!out.open(QIODevice::WriteOnly | QIODevice::NewOnly))
+    {
+      result.error = QObject::tr("Cannot create %1: %2").arg(name, out.errorString());
+      break;
+    }
+    written << name;
+    if (progress)
+      progress->setCurrentFile(QFileInfo(name).fileName());
+    if (!streamCopy(in, out, volumeSize, progress, &done, &result.error))
+      break;
+    ++result.files;
+    if (progress)
+      progress->setCompleted(done, quint64(part));
+  }
+  if (result.files != quint64(parts))
+  {
+    result.canceled = result.error.isEmpty();
+    for (const QString &name : written)
+      QFile::remove(name); // never leave a partial set behind
+    result.files = 0;
+    return result;
+  }
+  result.ok = true;
+  return result;
+}
+
+OperationResult combineFiles(const QString &firstVolume, const QString &output, ProgressState *progress)
+{
+  OperationResult result;
+  if (!firstVolume.endsWith(QStringLiteral(".001")))
+  {
+    result.error = QObject::tr("Select the first volume (.001) to combine.");
+    return result;
+  }
+  const QString base = firstVolume.left(firstVolume.size() - 4);
+  QStringList volumes;
+  quint64 total = 0;
+  for (int part = 1; part <= 999; ++part)
+  {
+    const QString name = splitVolumeName(base, part);
+    const QFileInfo info(name);
+    if (!info.isFile())
+      break;
+    volumes << info.absoluteFilePath();
+    total += quint64(info.size());
+  }
+  if (volumes.isEmpty())
+  {
+    result.error = QObject::tr("Cannot find %1.").arg(firstVolume);
+    return result;
+  }
+  const QString outAbs = QFileInfo(output).absoluteFilePath();
+  if (volumes.contains(outAbs))
+  {
+    result.error = QObject::tr("The output file cannot be one of the volumes.");
+    return result;
+  }
+  if (QFileInfo::exists(output))
+  {
+    result.error = QObject::tr("%1 already exists.").arg(output);
+    return result;
+  }
+  QFile out(output);
+  if (!out.open(QIODevice::WriteOnly | QIODevice::NewOnly))
+  {
+    result.error = QObject::tr("Cannot create %1: %2").arg(output, out.errorString());
+    return result;
+  }
+  if (progress)
+  {
+    progress->setStatus(QObject::tr("Combining into %1").arg(QFileInfo(output).fileName()));
+    progress->setTotals(total, quint64(volumes.size()));
+  }
+  quint64 done = 0;
+  for (const QString &name : volumes)
+  {
+    QFile in(name);
+    if (!in.open(QIODevice::ReadOnly))
+    {
+      result.error = QObject::tr("Cannot open %1: %2").arg(name, in.errorString());
+      break;
+    }
+    if (progress)
+      progress->setCurrentFile(QFileInfo(name).fileName());
+    if (!streamCopy(in, out, -1, progress, &done, &result.error))
+      break;
+    ++result.files;
+    if (progress)
+      progress->setCompleted(done, result.files);
+  }
+  if (result.files != quint64(volumes.size()))
+  {
+    result.canceled = result.error.isEmpty();
+    out.close();
+    QFile::remove(output);
+    result.files = 0;
+    return result;
+  }
+  result.ok = true;
+  return result;
+}

@@ -1,0 +1,21 @@
+[Desktop Entry]
+Type=Service
+MimeType=all/all;
+Actions=add;compress7z;compressZip;
+X-KDE-Priority=TopLevel
+X-KDE-Submenu=7-Zip
+
+[Desktop Action add]
+Name=Add to Archive…
+Icon=archive-insert
+Exec=7ziplx --add %F
+
+[Desktop Action compress7z]
+Name=Compress to 7z
+Icon=archive-insert
+Exec=7ziplx --compress --format 7z %F
+
+[Desktop Action compressZip]
+Name=Compress to zip
+Icon=archive-insert
+Exec=7ziplx --compress --format zip %F

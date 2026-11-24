@@ -1,0 +1,8 @@
+[Nemo Action]
+Name=7-Zip: Add to Archive…
+Comment=Choose the format and options
+Exec=7ziplx --add %F
+Icon-Name=archive-insert
+Selection=notnone
+Extensions=any;
+Quote=double

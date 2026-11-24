@@ -1,8 +1,8 @@
 [Nemo Action]
-Name=Extract Here
-Comment=Extract this archive into its own folder
+Name=7-Zip: Extract Here
+Comment=Extract into this folder
 Exec=7ziplx --extract-here %F
 Icon-Name=archive-extract
-Selection=m
-Extensions=7z;zip;rar;tar;gz;tgz;bz2;xz;cab;iso;wim;arj;lzh;zst;lzma;z;
+Selection=notnone
+Extensions=7z;zip;zipx;rar;tar;gz;tgz;bz2;tbz2;xz;txz;zst;tzst;lzma;z;cab;iso;wim;arj;lzh;cpio;rpm;deb;jar;apk;xar;pkg;dmg;squashfs;001;
 Quote=double

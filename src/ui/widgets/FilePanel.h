@@ -55,6 +55,14 @@ public:
   bool isActive() const { return m_active; }
   void setDropHighlight(bool active);
 
+  // Shows only rows whose name contains |text| (case-insensitive; * and ?
+  // work as wildcards).  The ".." row always stays.  Cleared when the folder
+  // changes.
+  void setNameFilter(const QString &text);
+  QString nameFilter() const { return m_nameFilter; }
+  int visibleItemCount() const;
+  QString emptyMessage() const;
+
   void selectAllRows();
   void selectLocalPaths(const QStringList &paths);
   void selectArchiveEntries(const QStringList &names);
@@ -67,6 +75,9 @@ public:
   void releaseDrag(const QStringList &paths) const;
   PanelDropTarget dropTargetForPosition(const QPoint &viewportPos) const;
   QString archiveRelativePath() const;
+  // The archive file on disk that contains what is shown: the outermost one
+  // when a nested archive is open (nested ones live in temporary folders).
+  QString rootArchivePath() const;
 
   Mode mode() const { return m_mode; }
   bool isArchive() const;
@@ -80,8 +91,14 @@ public:
   QString displayPath() const;
 
   QStringList selectedLocalPaths() const;
+  // Session item indices (not view rows) of the selected archive entries.
   QVector<int> selectedArchiveRows() const;
   int currentRow() const;
+  // Session item index of the current row in archive mode, -1 for ".." or none.
+  int currentArchiveItem() const;
+  bool isParentRow(int row) const;
+  // Selects the given local paths once the current folder finishes loading.
+  void selectLocalPathsWhenLoaded(const QStringList &paths);
   void invertSelection();
 
   LocalFsModel *localModel() const { return m_localModel; }
@@ -98,6 +115,7 @@ signals:
   void contextMenuRequested(const QPoint &globalPos);
   void transferRequested(const PanelTransfer &transfer, const PanelDropTarget &target, Qt::DropAction action);
   void focusOtherPanelRequested();
+  void nameFilterChanged(const QString &text);
 
 protected:
   bool eventFilter(QObject *watched, QEvent *event) override;
@@ -115,19 +133,25 @@ private:
   void updatePathBar();
   void connectSelectionModel();
   void connectModelSignals();
+  void connectArchiveModelSignals(ArchiveFolderModel *model);
   QString localKeyForRow(int row) const;
-  QString archiveKeyForRow(int row) const;
+  QString archiveKeyForItem(int item) const;
   void saveLocalSelection();
   void saveArchiveSelection();
   void scheduleLocalSelectionRestore();
   void scheduleArchiveSelectionRestore();
   void restoreLocalSelection();
   void restoreArchiveSelection();
+  void applyNameFilter();
+  bool rowMatchesFilter(int row) const;
 
   Mode m_mode = LocalMode;
   int m_panelId = -1;
   bool m_active = false;
   bool m_flatMode = false;
+  bool m_showDots = true;
+  QString m_nameFilter;
+  QString m_filterLocation;
   QString m_lastLocalPath;
   LocalFsModel *m_localModel = nullptr;
   ArchiveFolderModel *m_archiveModel = nullptr;
